@@ -49,7 +49,8 @@ def handle_audio_request():
         'outtmpl': str(output_path),
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'web']
+                 'player_client': ['android_creator', 'ios', 'android']
+                
             }
         },
         'postprocessors': [{
