@@ -11,6 +11,9 @@ static_ffmpeg.add_paths()
 ABS_DOWNLOADS_PATH = Path("/tmp/downloads")
 ABS_DOWNLOADS_PATH.mkdir(parents=True, exist_ok=True)
 
+# Cookie file path (jo aap repo ke root folder me upload karenge)
+COOKIE_FILE_PATH = Path(__file__).resolve().parent / "cookies.txt"
+
 app = Flask(__name__)
 CORS(app)
 
@@ -34,21 +37,21 @@ def handle_audio_request():
     final_mp3_name = f"{filename_base}.mp3"
 
     ydl_opts = {
-        'format': 'bestaudio/best',
+        'format': 'ba/b',
         'outtmpl': output_template,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['tv_embedded', 'mweb']
-            }
-        },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
         'quiet': True,
-        'no_warnings': True
+        'no_warnings': True,
+        'noplaylist': True
     }
+
+    # Agar cookies file maujood hai toh pass karein
+    if COOKIE_FILE_PATH.exists():
+        ydl_opts['cookiefile'] = str(COOKIE_FILE_PATH)
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
