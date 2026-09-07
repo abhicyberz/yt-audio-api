@@ -112,15 +112,11 @@ def main():
     Starts the background thread for automatic token cleanup
     and launches the Flask development server.
     """
-    token_cleaner_thread = threading.Thread(
-        target=access_manager.manage_tokens,
-        daemon=True
-    )
+    token_cleaner_thread = threading.Thread(target=access_manager.manage_tokens, daemon=True)
     token_cleaner_thread.start()
-        port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
-
 
 if __name__ == "__main__":
     main()
+    
