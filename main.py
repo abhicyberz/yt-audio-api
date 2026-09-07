@@ -73,6 +73,7 @@ def handle_audio_request():
 @app.route("/download", methods=["GET"])
 @app.route("/download/", methods=["GET"])
 def download_audio():
+def download_audio():
     token = request.args.get("token")
     if not token:
         return jsonify({"error": "Missing token"}), 400
