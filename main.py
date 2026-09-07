@@ -21,7 +21,6 @@ def handle_audio_request():
     if not raw_url:
         return jsonify({"error": "Missing 'url' parameter in request."}), 400
 
-    # URL parse fix: agar frontend se URL truncate ho jaye toh safe YouTube link banana
     if "v=" in raw_url:
         video_id = raw_url.split("v=")[-1].split("&")[0]
         video_url = f"https://www.youtube.com/watch?v={video_id}"
@@ -53,12 +52,7 @@ def handle_audio_request():
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
-        return send_from_directory(
-            ABS_DOWNLOADS_PATH, 
-            final_mp3_name, 
-            as_attachment=True, 
-            download_name="audio.mp3"
-        )
+        return send_from_directory(ABS_DOWNLOADS_PATH, final_mp3_name, as_attachment=True)
     except Exception as e:
         return jsonify({"error": "Failed to download or convert audio.", "detail": str(e)}), 500
 
