@@ -38,7 +38,7 @@ def handle_audio_request():
         'outtmpl': output_template,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android_creator', 'ios', 'android']
+                'player_client': ['tv_embedded', 'mweb']
             }
         },
         'postprocessors': [{
@@ -46,7 +46,8 @@ def handle_audio_request():
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
-        'quiet': True
+        'quiet': True,
+        'no_warnings': True
     }
 
     try:
