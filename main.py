@@ -37,11 +37,11 @@ def handle_audio_request():
     final_mp3_name = f"{filename_base}.mp3"
 
     ydl_opts = {
-        'format': 'ba/b',
+        'format': 'bestaudio/best',
         'outtmpl': output_template,
         'extractor_args': {
             'youtube': {
-                'player_client': ['mweb', 'web']
+                'player_client': ['web', 'tv_embedded']
             }
         },
         'postprocessors': [{
@@ -74,4 +74,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-            
+    
