@@ -1,5 +1,4 @@
 import os
-import threading
 from pathlib import Path
 from uuid import uuid4
 from flask import Flask, request, jsonify, send_from_directory
@@ -7,30 +6,37 @@ from flask_cors import CORS
 import yt_dlp
 import static_ffmpeg
 
-# Static ffmpeg paths add karein
 static_ffmpeg.add_paths()
 
-# Downloads folder path define karein
 ABS_DOWNLOADS_PATH = Path("/tmp/downloads")
 ABS_DOWNLOADS_PATH.mkdir(parents=True, exist_ok=True)
 
-# Flask application initialize karein
 app = Flask(__name__)
 CORS(app)
 
 
 @app.route("/", methods=["GET"])
 def handle_audio_request():
-    video_url = request.args.get("url")
-    if not video_url:
+    raw_url = request.args.get("url", "").strip()
+    if not raw_url:
         return jsonify({"error": "Missing 'url' parameter in request."}), 400
 
-    filename = f"{uuid4()}.mp3"
-    output_path = ABS_DOWNLOADS_PATH / filename
+    # URL parse fix: agar frontend se URL truncate ho jaye toh safe YouTube link banana
+    if "v=" in raw_url:
+        video_id = raw_url.split("v=")[-1].split("&")[0]
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
+    elif len(raw_url) == 11 and "/" not in raw_url:
+        video_url = f"https://www.youtube.com/watch?v={raw_url}"
+    else:
+        video_url = raw_url
+
+    filename_base = str(uuid4())
+    output_template = str(ABS_DOWNLOADS_PATH / f"{filename_base}.%(ext)s")
+    final_mp3_name = f"{filename_base}.mp3"
 
     ydl_opts = {
         'format': 'bestaudio/best',
-        'outtmpl': str(output_path),
+        'outtmpl': output_template,
         'extractor_args': {
             'youtube': {
                 'player_client': ['android_creator', 'ios', 'android']
@@ -47,7 +53,12 @@ def handle_audio_request():
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
-        return send_from_directory(ABS_DOWNLOADS_PATH, filename, as_attachment=True)
+        return send_from_directory(
+            ABS_DOWNLOADS_PATH, 
+            final_mp3_name, 
+            as_attachment=True, 
+            download_name="audio.mp3"
+        )
     except Exception as e:
         return jsonify({"error": "Failed to download or convert audio.", "detail": str(e)}), 500
 
