@@ -7,7 +7,7 @@ Utilizes yt-dlp and FFmpeg for conversion and token-based access management.
 
 import secrets
 import threading
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_file
 from uuid import uuid4
 from pathlib import Path
 import yt_dlp
@@ -113,6 +113,15 @@ def _generate_token_response(filename: str):
     access_manager.add_token(token, filename)
     return jsonify(token=token)
 
+@app.route("/download", methods=["GET"])
+def download_audio_endpoint():
+    token = request.args.get("token")
+    if not token or not access_manager.is_token_valid(token):
+        return jsonify({"error": "Invalid or expired token"}), 403
+    filename = access_manager.get_filename(token)
+    file_path = OUTPUT_DIR / filename
+    return send_file(str(file_path), as_attachment=True, download_name=filename)
+    
 
 def main():
     """
