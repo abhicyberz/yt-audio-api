@@ -71,7 +71,9 @@ def handle_audio_request():
 
 
 @app.route("/download", methods=["GET"])
+@app.route("/download/", methods=["GET"])
 def download_audio():
+    
     """
     Endpoint to serve an audio file associated with a given token.
     If token is valid and not expired, returns the associated MP3 file.
