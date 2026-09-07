@@ -7,7 +7,7 @@ Utilizes yt-dlp and FFmpeg for conversion and token-based access management.
 
 import secrets
 import threading
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, send_from_directory
 from uuid import uuid4
 from pathlib import Path
 import yt_dlp
