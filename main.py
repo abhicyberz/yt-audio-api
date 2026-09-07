@@ -94,7 +94,7 @@ def download_audio():
 
     try:
         filename = access_manager.get_audio_file(token)
-        return send_from_directory(ABS_DOWNLOADS_PATH, filename=filename, as_attachment=True)
+        return send_from_directory(ABS_DOWNLOADS_PATH, filename, as_attachment=True)
     except FileNotFoundError:
         return jsonify(error="Requested file could not be found on the server."), NOT_FOUND
 
@@ -113,14 +113,6 @@ def _generate_token_response(filename: str):
     token = secrets.token_urlsafe(TOKEN_LENGTH)
     access_manager.add_token(token, filename)
     return jsonify(token=token)
-
-@app.route("/download", methods=["GET"])
-def download_audio_endpoint():
-    token = request.args.get("token")
-    if not token or not access_manager.is_token_valid(token):
-        return jsonify({"error": "Invalid or expired token"}), 403
-    filename = access_manager.get_filename(token)
-    return send_from_directory(ABS_DOWNLOADS_PATH, filename, as_attachment=True)
 
 
 def main():
