@@ -15,6 +15,8 @@ import access_manager
 from constants import *
 import os
 from flask_cors import CORS
+import static_ffmpeg
+static_ffmpeg.add_paths()
 
 # Initialize the Flask application
 app = Flask(__name__)
