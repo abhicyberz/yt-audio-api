@@ -41,12 +41,8 @@ def handle_audio_request():
         'outtmpl': output_template,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios'],
-                'player_skip': ['webpage', 'configs', 'js']
+                'player_client': ['mweb', 'web']
             }
-        },
-        'http_headers': {
-            'User-Agent': 'com.google.android.youtube/19.05.36 (Linux; U; Android 14) gzip'
         },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
@@ -58,7 +54,6 @@ def handle_audio_request():
         'noplaylist': True
     }
 
-    # Cookies pass karna
     if COOKIE_FILE_PATH.is_file():
         ydl_opts['cookiefile'] = str(COOKIE_FILE_PATH)
     elif Path("cookies.txt").is_file():
@@ -79,4 +74,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+            
