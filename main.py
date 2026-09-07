@@ -4,16 +4,16 @@ from uuid import uuid4
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import yt_dlp
+import static_ffmpeg
+
+static_ffmpeg.add_paths()
 
 BASE_DIR = Path(__file__).resolve().parent
 ABS_DOWNLOADS_PATH = Path("/tmp/downloads")
 ABS_DOWNLOADS_PATH.mkdir(parents=True, exist_ok=True)
 
-COOKIE_FILE_PATH = BASE_DIR / "cookies.txt"
-
 app = Flask(__name__)
 CORS(app)
-
 
 @app.route("/", methods=["GET"])
 def handle_audio_request():
@@ -33,37 +33,41 @@ def handle_audio_request():
     output_path = str(ABS_DOWNLOADS_PATH / f"{file_id}.%(ext)s")
 
     ydl_opts = {
-        # Direct best m4a audio stream
-        'format': '140/ba[ext=m4a]/bestaudio',
+        'format': 'bestaudio/best',
         'outtmpl': output_path,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android_creator', 'android'],
+            }
+        },
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
         'quiet': False,
         'no_warnings': False,
         'noplaylist': True,
     }
 
-    if COOKIE_FILE_PATH.is_file():
-        ydl_opts['cookiefile'] = str(COOKIE_FILE_PATH)
-
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
-            downloaded_file = ydl.prepare_filename(info)
+            final_mp3 = str(ABS_DOWNLOADS_PATH / f"{file_id}.mp3")
 
-        # Force browser to download as audio file
+        title = info.get('title', 'audio').replace('/', '_')
         return send_file(
-            downloaded_file,
+            final_mp3,
             as_attachment=True,
-            download_name=f"{info.get('title', 'audio')}.m4a",
-            mimetype="audio/mp4"
+            download_name=f"{title}.mp3",
+            mimetype="audio/mpeg"
         )
     except Exception as e:
         return jsonify({"error": "Download failed", "detail": str(e)}), 500
 
-
 def main():
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
-
 
 if __name__ == "__main__":
     main()
