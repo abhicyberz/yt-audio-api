@@ -13,9 +13,13 @@ from pathlib import Path
 import yt_dlp
 import access_manager
 from constants import *
+import os
+from flask_cors import CORS
 
 # Initialize the Flask application
 app = Flask(__name__)
+CORS(app)
+
 
 
 @app.route("/", methods=["GET"])
@@ -113,7 +117,9 @@ def main():
         daemon=True
     )
     token_cleaner_thread.start()
-    app.run(debug=True)
+        port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
 
 
 if __name__ == "__main__":
