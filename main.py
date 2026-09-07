@@ -67,39 +67,8 @@ def handle_audio_request():
     except Exception as e:
         return jsonify(error="Failed to download or convert audio.", detail=str(e)), INTERNAL_SERVER_ERROR
 
-    return _generate_token_response(filename)
-
-
-@app.route("/download", methods=["GET"])
-@app.route("/download/", methods=["GET"])
-def download_audio():
-    token = request.args.get("token")
-    if not token:
-        return jsonify({"error": "Missing token"}), 400
-    if not access_manager.has_access(token):
-        return jsonify({"error": "Invalid token"}), 401
-    if not access_manager.is_valid(token):
-        return jsonify({"error": "Token expired"}), 408
-
-    filename = access_manager.get_audio_file(token)
-    return send_from_directory(ABS_DOWNLOADS_PATH, filename, as_attachment=True)
-
-
-def _generate_token_response(filename: str):
-    """
-    Generates a secure download token for a given filename,
-    registers it in the access manager, and returns the token as JSON.
-
-    Args:
-        filename (str): The name of the downloaded MP3 file
-
-    Returns:
-        JSON: {"token": <generated_token>}
-    """
-    token = secrets.token_urlsafe(TOKEN_LENGTH)
-    access_manager.add_token(token, filename)
-    return jsonify(token=token)
-
+        return send_from_directory(ABS_DOWNLOADS_PATH, filename, as_attachment=True)
+        
 
 def main():
     """
