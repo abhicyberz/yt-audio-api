@@ -37,20 +37,15 @@ def handle_audio_request():
     final_mp3_name = f"{filename_base}.mp3"
 
     ydl_opts = {
-        'format': 'bestaudio/best',
+        'format': 'ba/b/best',
         'outtmpl': output_template,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['web', 'tv_embedded']
-            }
-        },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
-        'quiet': True,
-        'no_warnings': True,
+        'quiet': False,
+        'no_warnings': False,
         'noplaylist': True
     }
 
