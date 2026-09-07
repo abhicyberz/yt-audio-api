@@ -1,12 +1,9 @@
 import os
 from pathlib import Path
 from uuid import uuid4
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import yt_dlp
-import static_ffmpeg
-
-static_ffmpeg.add_paths()
 
 BASE_DIR = Path(__file__).resolve().parent
 ABS_DOWNLOADS_PATH = Path("/tmp/downloads")
@@ -22,7 +19,7 @@ CORS(app)
 def handle_audio_request():
     raw_url = request.args.get("url", "").strip()
     if not raw_url:
-        return jsonify({"error": "Missing 'url' parameter in request."}), 400
+        return jsonify({"error": "Missing 'url' parameter"}), 400
 
     if "v=" in raw_url:
         video_id = raw_url.split("v=")[-1].split("&")[0]
@@ -32,44 +29,35 @@ def handle_audio_request():
     else:
         video_url = raw_url
 
-    filename_base = str(uuid4())
-    output_template = str(ABS_DOWNLOADS_PATH / f"{filename_base}.%(ext)s")
-    final_mp3_name = f"{filename_base}.mp3"
+    file_id = str(uuid4())
+    output_path = str(ABS_DOWNLOADS_PATH / f"{file_id}.%(ext)s")
 
     ydl_opts = {
-        'format': 'ba/b/best',
-        'outtmpl': output_template,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['ios'],
-                'player_skip': ['webpage', 'configs']
-            }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
-            'Accept-Language': 'en-US,en;q=0.9',
-        },
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        'quiet': True,
-        'no_warnings': True,
-        'noplaylist': True
+        # Direct best m4a audio stream
+        'format': '140/ba[ext=m4a]/bestaudio',
+        'outtmpl': output_path,
+        'quiet': False,
+        'no_warnings': False,
+        'noplaylist': True,
     }
 
     if COOKIE_FILE_PATH.is_file():
         ydl_opts['cookiefile'] = str(COOKIE_FILE_PATH)
-    elif Path("cookies.txt").is_file():
-        ydl_opts['cookiefile'] = "cookies.txt"
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([video_url])
-        return send_from_directory(ABS_DOWNLOADS_PATH, final_mp3_name, as_attachment=True)
+            info = ydl.extract_info(video_url, download=True)
+            downloaded_file = ydl.prepare_filename(info)
+
+        # Force browser to download as audio file
+        return send_file(
+            downloaded_file,
+            as_attachment=True,
+            download_name=f"{info.get('title', 'audio')}.m4a",
+            mimetype="audio/mp4"
+        )
     except Exception as e:
-        return jsonify({"error": "Failed to download or convert audio.", "detail": str(e)}), 500
+        return jsonify({"error": "Download failed", "detail": str(e)}), 500
 
 
 def main():
