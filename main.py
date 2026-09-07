@@ -41,18 +41,23 @@ def handle_audio_request():
     filename = f"{uuid4()}.mp3"
     output_path = Path(ABS_DOWNLOADS_PATH) / filename
 
-    # yt-dlp configuration for downloading best audio and converting to mp3
+        # yt-dlp configuration for downloading audio
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': str(output_path),
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web']
+            }
+        },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
-            'preferredquality': '192'
+            'preferredquality': '192',
         }],
         'quiet': True
     }
-
+    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
