@@ -73,32 +73,16 @@ def handle_audio_request():
 @app.route("/download", methods=["GET"])
 @app.route("/download/", methods=["GET"])
 def download_audio():
-    
-    """
-    Endpoint to serve an audio file associated with a given token.
-    If token is valid and not expired, returns the associated MP3 file.
-
-    Query Parameters:
-        - token (str): Unique access token
-
-    Returns:
-        - MP3 audio file as attachment or error JSON
-    """
     token = request.args.get("token")
     if not token:
-        return jsonify(error="Missing 'token' parameter in request."), BAD_REQUEST
-
+        return jsonify({"error": "Missing token"}), 400
     if not access_manager.has_access(token):
-        return jsonify(error="Token is invalid or unknown."), UNAUTHORIZED
-
+        return jsonify({"error": "Invalid token"}), 401
     if not access_manager.is_valid(token):
-        return jsonify(error="Token has expired."), REQUEST_TIMEOUT
+        return jsonify({"error": "Token expired"}), 408
 
-    try:
-        filename = access_manager.get_audio_file(token)
-        return send_from_directory(ABS_DOWNLOADS_PATH, filename, as_attachment=True)
-    except FileNotFoundError:
-        return jsonify(error="Requested file could not be found on the server."), NOT_FOUND
+    filename = access_manager.get_audio_file(token)
+    return send_from_directory(ABS_DOWNLOADS_PATH, filename, as_attachment=True)
 
 
 def _generate_token_response(filename: str):
