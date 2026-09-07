@@ -120,9 +120,8 @@ def download_audio_endpoint():
     if not token or not access_manager.is_token_valid(token):
         return jsonify({"error": "Invalid or expired token"}), 403
     filename = access_manager.get_filename(token)
-    file_path = OUTPUT_DIR / filename
-    return send_file(str(file_path), as_attachment=True, download_name=filename)
-    
+    return send_from_directory(ABS_DOWNLOADS_PATH, filename, as_attachment=True)
+
 
 def main():
     """
