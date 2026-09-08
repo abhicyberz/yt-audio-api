@@ -1,4 +1,5 @@
 import os
+import shutil
 from pathlib import Path
 from uuid import uuid4
 from flask import Flask, request, jsonify, send_file
@@ -8,7 +9,6 @@ import static_ffmpeg
 
 static_ffmpeg.add_paths()
 
-BASE_DIR = Path(__file__).resolve().parent
 ABS_DOWNLOADS_PATH = Path("/tmp/downloads")
 ABS_DOWNLOADS_PATH.mkdir(parents=True, exist_ok=True)
 
@@ -32,13 +32,20 @@ def handle_audio_request():
     file_id = str(uuid4())
     output_path = str(ABS_DOWNLOADS_PATH / f"{file_id}.%(ext)s")
 
+    # Anti-bot multi-client fallback chain
     ydl_opts = {
-        'format': 'bestaudio/best',
+        'format': 'ba/b',
         'outtmpl': output_path,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android_creator', 'android'],
+                'player_client': ['ios', 'android', 'web_embedded'],
+                'player_skip': ['configs', 'webpage'],
             }
+        },
+        'http_headers': {
+            'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X; en_US)',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Sec-Fetch-Mode': 'navigate'
         },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
@@ -55,7 +62,7 @@ def handle_audio_request():
             info = ydl.extract_info(video_url, download=True)
             final_mp3 = str(ABS_DOWNLOADS_PATH / f"{file_id}.mp3")
 
-        title = info.get('title', 'audio').replace('/', '_')
+        title = info.get('title', 'audio').replace('/', '_').replace('\\', '_')
         return send_file(
             final_mp3,
             as_attachment=True,
