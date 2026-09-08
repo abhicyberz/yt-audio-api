@@ -19,7 +19,7 @@ CORS(app)
 
 DOWNLOAD_SEMAPHORE = BoundedSemaphore(value=2)
 
-# 🎵 Live Channel Tracks Endpoint
+# 🎵 Default Official Channel Tracks
 @app.route("/channel-tracks", methods=["GET"])
 def get_channel_tracks():
     channel_url = "https://www.youtube.com/@dj_abhishek_dada/videos"
@@ -46,7 +46,7 @@ def get_channel_tracks():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# 🔍 Universal YouTube Search Endpoint
+# 🔍 Smart Search (Supports Channel Handles, Names & Songs)
 @app.route("/search", methods=["GET"])
 def search_youtube():
     query = request.args.get("q", "").strip()
@@ -59,10 +59,19 @@ def search_youtube():
         'quiet': True,
         'no_warnings': True,
     }
+
+    # Agar user direct channel handle daale (e.g., @tseries) ya channel link
+    if query.startswith("@") or "youtube.com/@" in query or "/channel/" in query:
+        target_url = query if query.startswith("http") else f"https://www.youtube.com/{query}/videos"
+        ydl_opts['playlistend'] = 30
+        search_target = target_url
+    else:
+        # Normal keyword / channel name search
+        search_target = f"ytsearch25:{query}"
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # YouTube se top 25 relevant matching tracks fetch honge
-            res = ydl.extract_info(f"ytsearch25:{query}", download=False)
+            res = ydl.extract_info(search_target, download=False)
             entries = res.get('entries', [])
             results = [
                 {
@@ -76,7 +85,7 @@ def search_youtube():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ⬇ Direct MP3 Download Pipeline with Queue & Bot-Delay
+# ⬇ Audio Download Pipeline with Jitter Queue
 @app.route("/", methods=["GET"])
 def handle_audio_request():
     raw_url = request.args.get("url", "").strip()
