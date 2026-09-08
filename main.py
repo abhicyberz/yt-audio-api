@@ -19,7 +19,7 @@ CORS(app)
 
 DOWNLOAD_SEMAPHORE = BoundedSemaphore(value=2)
 
-# 🎵 Live Channel Fetch (Max 150 to prevent Bot Block)
+# 🎵 Live Channel Fetch (Limit increased to 500 songs)
 @app.route("/channel-tracks", methods=["GET"])
 def get_channel_tracks():
     ydl_opts = {
@@ -27,7 +27,7 @@ def get_channel_tracks():
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
-        'playlistend': 150, # 150 gaane ek baar me layega taaki server crash na ho
+        'playlistend': 500, # 👈 Yahan maine 150 ko 500 kar diya hai
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -45,7 +45,7 @@ def get_channel_tracks():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# 🔍 Smart Search
+# 🔍 Smart Search (Limit increased to 50 results)
 @app.route("/search", methods=["GET"])
 def search_youtube():
     query = request.args.get("q", "").strip()
@@ -60,7 +60,8 @@ def search_youtube():
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            res = ydl.extract_info(f"ytsearch20:{query}", download=False)
+            # 👈 Yahan ytsearch20 ki jagah ytsearch50 kar diya hai
+            res = ydl.extract_info(f"ytsearch50:{query}", download=False)
             entries = res.get('entries', [])
             results = [
                 {
