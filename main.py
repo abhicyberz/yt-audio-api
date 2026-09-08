@@ -19,30 +19,33 @@ CORS(app)
 
 DOWNLOAD_SEMAPHORE = BoundedSemaphore(value=2)
 
-# 🎵 Safe & Fast Channel Tracks (Syntax Error Fixed)
+# 🎵 Live Channel Fetch (Max 150 to prevent Bot Block)
 @app.route("/channel-tracks", methods=["GET"])
 def get_channel_tracks():
-    safe_tracks = [
-        { "id": "Mnr1eLcCejg", "title": "Ganjawa Pike Bolbam (Humming Bass) Sawan Special", "author": "DJ ABHISHEK DADA" },
-        { "id": "YOUD_pqObe0", "title": "Hum Pyar Karne Wale Remix | Hard Bass Mix", "author": "DJ ABHISHEK DADA" },
-        { "id": "5-_oKgZhDww", "title": "Gaura Ho Has Da Na (Pawan Singh) Bol Bam Special", "author": "DJ ABHISHEK DADA" },
-        { "id": "fc3PeS5tq6g", "title": "A BABA FIR SE NIRMAL KAR DA - Hard Bass Bol Bam", "author": "DJ ABHISHEK DADA" },
-        { "id": "Yec7wmQiWrY", "title": "BABA KE BUTI (Pawan Singh) Sawan Special Remix", "author": "DJ ABHISHEK DADA" },
-        { "id": "3qiNfvDSrRs", "title": "Pawan Singh | Dance Remix | पापे पड़ी", "author": "DJ ABHISHEK DADA" },
-        { "id": "FBclHzxx9UI", "title": "O Kanha Tu Hai Kiska Deewana Edm Mix", "author": "DJ ABHISHEK DADA" },
-        { "id": "QSbZKOyFV50", "title": "EDM_MIX ×× इंडिया हिली ×× Hard 5G Vibration Mix", "author": "DJ ABHISHEK DADA" },
-        { "id": "SsdeFebLfuM", "title": "Marab Marda Ke Goli Edm Vibration Mix", "author": "DJ ABHISHEK DADA" },
-        { "id": "5UfhJ2DXtsc", "title": "Jai Bhim Bol ×× Khatarnak Edm Drop Mix", "author": "DJ ABHISHEK DADA" },
-        { "id": "IKQluTUIDW4", "title": "Gauwa Ke Purube Kahe | Old Bhakti Dance Mix", "author": "DJ ABHISHEK DADA" },
-        { "id": "snFAQzgG5yA", "title": "Dilwa Dole Thode Thode - Ankush Raja Remix", "author": "DJ ABHISHEK DADA" },
-        { "id": "o7xYl27L_3s", "title": "Lahanga Me Meter Ba - Ultra Humming Bass", "author": "DJ ABHISHEK DADA" },
-        { "id": "mJ94EaKx_7I", "title": "Hari Hari Odhani - 2026 Club Edit", "author": "DJ ABHISHEK DADA" },
-        { "id": "67i6AoxgZ_A", "title": "Kashi Me Bam Bhole - Heavy Trance Bolbam", "author": "DJ ABHISHEK DADA" },
-        { "id": "wL3pWq10e-s", "title": "Kamar Khesari Ke Gaana - Power Bass Mix", "author": "DJ ABHISHEK DADA" }
-    ]
-    return jsonify({"status": "success", "tracks": safe_tracks})
+    ydl_opts = {
+        'extract_flat': 'in_playlist',
+        'skip_download': True,
+        'quiet': True,
+        'no_warnings': True,
+        'playlistend': 150, # 150 gaane ek baar me layega taaki server crash na ho
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            res = ydl.extract_info("https://www.youtube.com/@dj_abhishek_dada/videos", download=False)
+            entries = res.get('entries', [])
+            tracks = [
+                {
+                    "id": item.get("id"),
+                    "title": item.get("title", "DJ Track"),
+                    "author": "DJ ABHISHEK DADA"
+                }
+                for item in entries if item and item.get("id")
+            ]
+            return jsonify({"status": "success", "tracks": tracks})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-# 🔍 Smart Search 
+# 🔍 Smart Search
 @app.route("/search", methods=["GET"])
 def search_youtube():
     query = request.args.get("q", "").strip()
@@ -53,12 +56,7 @@ def search_youtube():
         'extract_flat': 'in_playlist',
         'skip_download': True,
         'quiet': True,
-        'no_warnings': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['ios', 'android'],
-            }
-        }
+        'no_warnings': True
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -81,7 +79,7 @@ def search_youtube():
 def handle_audio_request():
     raw_url = request.args.get("url", "").strip()
     if not raw_url:
-        return jsonify({"error": "Missing 'url' parameter"}), 400
+        return jsonify({"error": "Missing url parameter"}), 400
 
     if "v=" in raw_url:
         video_id = raw_url.split("v=")[-1].split("&")[0]
@@ -126,12 +124,7 @@ def handle_audio_request():
                 final_mp3 = str(ABS_DOWNLOADS_PATH / f"{file_id}.mp3")
 
             title = info.get('title', 'audio').replace('/', '_').replace('\\', '_')
-            return send_file(
-                final_mp3,
-                as_attachment=True,
-                download_name=f"{title}.mp3",
-                mimetype="audio/mpeg"
-            )
+            return send_file(final_mp3, as_attachment=True, download_name=f"{title}.mp3", mimetype="audio/mpeg")
         except Exception as e:
             return jsonify({"error": "Download failed", "detail": str(e)}), 500
 
