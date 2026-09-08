@@ -19,7 +19,7 @@ CORS(app)
 
 DOWNLOAD_SEMAPHORE = BoundedSemaphore(value=2)
 
-# 🎵 Live Channel All-Videos Endpoint (Full 380+ Tracks)
+# 🎵 Live Channel Tracks Endpoint
 @app.route("/channel-tracks", methods=["GET"])
 def get_channel_tracks():
     channel_url = "https://www.youtube.com/@dj_abhishek_dada/videos"
@@ -28,7 +28,7 @@ def get_channel_tracks():
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
-        'playlistend': 100,  # Ek baar me 100 tracks live cache karega
+        'playlistend': 100,
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -46,6 +46,37 @@ def get_channel_tracks():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# 🔍 Universal YouTube Search Endpoint
+@app.route("/search", methods=["GET"])
+def search_youtube():
+    query = request.args.get("q", "").strip()
+    if not query:
+        return jsonify({"status": "error", "message": "Missing search query"}), 400
+
+    ydl_opts = {
+        'extract_flat': 'in_playlist',
+        'skip_download': True,
+        'quiet': True,
+        'no_warnings': True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # YouTube se top 25 relevant matching tracks fetch honge
+            res = ydl.extract_info(f"ytsearch25:{query}", download=False)
+            entries = res.get('entries', [])
+            results = [
+                {
+                    "id": item.get("id"),
+                    "title": item.get("title", "YouTube Track"),
+                    "author": item.get("uploader", "YouTube Creator")
+                }
+                for item in entries if item and item.get("id")
+            ]
+            return jsonify({"status": "success", "tracks": results})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# ⬇ Direct MP3 Download Pipeline with Queue & Bot-Delay
 @app.route("/", methods=["GET"])
 def handle_audio_request():
     raw_url = request.args.get("url", "").strip()
@@ -88,7 +119,7 @@ def handle_audio_request():
     }
 
     with DOWNLOAD_SEMAPHORE:
-        time.sleep(random.uniform(1.0, 2.5))
+        time.sleep(random.uniform(1.0, 2.0))
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=True)
