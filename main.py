@@ -17,9 +17,34 @@ ABS_DOWNLOADS_PATH.mkdir(parents=True, exist_ok=True)
 app = Flask(__name__)
 CORS(app)
 
-# 🔒 Traffic Controller: Ek waqt par YouTube par sirf 2 download requests execute hongi
-# Baki sab safe queue mein line lagakar aaram se process hongi
 DOWNLOAD_SEMAPHORE = BoundedSemaphore(value=2)
+
+# 🎵 Live Channel All-Videos Endpoint (Full 380+ Tracks)
+@app.route("/channel-tracks", methods=["GET"])
+def get_channel_tracks():
+    channel_url = "https://www.youtube.com/@dj_abhishek_dada/videos"
+    ydl_opts = {
+        'extract_flat': 'in_playlist',
+        'skip_download': True,
+        'quiet': True,
+        'no_warnings': True,
+        'playlistend': 100,  # Ek baar me 100 tracks live cache karega
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            res = ydl.extract_info(channel_url, download=False)
+            entries = res.get('entries', [])
+            tracks = [
+                {
+                    "id": item.get("id"),
+                    "title": item.get("title", "DJ Track"),
+                    "author": "DJ ABHISHEK DADA"
+                }
+                for item in entries if item and item.get("id")
+            ]
+            return jsonify({"status": "success", "tracks": tracks})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/", methods=["GET"])
 def handle_audio_request():
@@ -38,7 +63,6 @@ def handle_audio_request():
     file_id = str(uuid4())
     output_path = str(ABS_DOWNLOADS_PATH / f"{file_id}.%(ext)s")
 
-    # Anti-bot options
     ydl_opts = {
         'format': 'ba/b',
         'outtmpl': output_path,
@@ -63,11 +87,8 @@ def handle_audio_request():
         'noplaylist': True,
     }
 
-    # Queue Buffer: User request line mein wait karegi jab tak pehla download complete na ho
     with DOWNLOAD_SEMAPHORE:
-        # Human Jitter: Har request ke beech 1 se 2.5 second ka random human delay
         time.sleep(random.uniform(1.0, 2.5))
-
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=True)
