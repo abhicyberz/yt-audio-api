@@ -19,10 +19,9 @@ CORS(app)
 
 DOWNLOAD_SEMAPHORE = BoundedSemaphore(value=2)
 
-# 🎵 Safe & Fast Channel Tracks (No Bot-Trigger Full Extraction)
+# 🎵 Safe & Fast Channel Tracks (Syntax Error Fixed)
 @app.route("/channel-tracks", methods=["GET"])
 def get_channel_tracks():
-    # Pre-verified robust catalog of your original tracks to prevent bot bans
     safe_tracks = [
         { "id": "Mnr1eLcCejg", "title": "Ganjawa Pike Bolbam (Humming Bass) Sawan Special", "author": "DJ ABHISHEK DADA" },
         { "id": "YOUD_pqObe0", "title": "Hum Pyar Karne Wale Remix | Hard Bass Mix", "author": "DJ ABHISHEK DADA" },
@@ -38,12 +37,12 @@ def get_channel_tracks():
         { "id": "snFAQzgG5yA", "title": "Dilwa Dole Thode Thode - Ankush Raja Remix", "author": "DJ ABHISHEK DADA" },
         { "id": "o7xYl27L_3s", "title": "Lahanga Me Meter Ba - Ultra Humming Bass", "author": "DJ ABHISHEK DADA" },
         { "id": "mJ94EaKx_7I", "title": "Hari Hari Odhani - 2026 Club Edit", "author": "DJ ABHISHEK DADA" },
-        { "id": "67i6AoxgZ_A", title: "Kashi Me Bam Bhole - Heavy Trance Bolbam", "author": "DJ ABHISHEK DADA" },
-        { "id": "wL3pWq10e-s", title: "Kamar Khesari Ke Gaana - Power Bass Mix", "author": "DJ ABHISHEK DADA" }
+        { "id": "67i6AoxgZ_A", "title": "Kashi Me Bam Bhole - Heavy Trance Bolbam", "author": "DJ ABHISHEK DADA" },
+        { "id": "wL3pWq10e-s", "title": "Kamar Khesari Ke Gaana - Power Bass Mix", "author": "DJ ABHISHEK DADA" }
     ]
     return jsonify({"status": "success", "tracks": safe_tracks})
 
-# 🔍 Smart Search (Anti-Bot Configured)
+# 🔍 Smart Search 
 @app.route("/search", methods=["GET"])
 def search_youtube():
     query = request.args.get("q", "").strip()
@@ -77,7 +76,7 @@ def search_youtube():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ⬇ Audio Download Pipeline with Jitter Queue
+# ⬇ Audio Download Pipeline
 @app.route("/", methods=["GET"])
 def handle_audio_request():
     raw_url = request.args.get("url", "").strip()
