@@ -19,7 +19,7 @@ CORS(app)
 
 DOWNLOAD_SEMAPHORE = BoundedSemaphore(value=2)
 
-# 🎵 Live Channel Fetch (Limit increased to 500 songs)
+# 🎵 Live Channel Fetch (Limit 500 Songs)
 @app.route("/channel-tracks", methods=["GET"])
 def get_channel_tracks():
     ydl_opts = {
@@ -27,7 +27,7 @@ def get_channel_tracks():
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
-        'playlistend': 500, # 👈 Yahan maine 150 ko 500 kar diya hai
+        'playlistend': 500, 
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -45,7 +45,7 @@ def get_channel_tracks():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# 🔍 Smart Search (Limit increased to 50 results)
+# 🔍 Smart Search (Limit 50 Results)
 @app.route("/search", methods=["GET"])
 def search_youtube():
     query = request.args.get("q", "").strip()
@@ -60,7 +60,6 @@ def search_youtube():
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # 👈 Yahan ytsearch20 ki jagah ytsearch50 kar diya hai
             res = ydl.extract_info(f"ytsearch50:{query}", download=False)
             entries = res.get('entries', [])
             results = [
@@ -75,7 +74,7 @@ def search_youtube():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ⬇ Audio Download Pipeline
+# ⬇ Audio Download Pipeline (Anti-Bot & Client Bypass Fix)
 @app.route("/", methods=["GET"])
 def handle_audio_request():
     raw_url = request.args.get("url", "").strip()
@@ -93,12 +92,13 @@ def handle_audio_request():
     file_id = str(uuid4())
     output_path = str(ABS_DOWNLOADS_PATH / f"{file_id}.%(ext)s")
 
+    # Anti-bot bypass configurations using official mobile clients
     ydl_opts = {
         'format': 'ba/b',
         'outtmpl': output_path,
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'android', 'web_embedded'],
+                'player_client': ['android', 'ios'],
                 'player_skip': ['configs', 'webpage'],
             }
         },
@@ -135,4 +135,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
