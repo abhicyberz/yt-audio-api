@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import yt_dlp
 import static_ffmpeg
@@ -87,7 +87,9 @@ def handle_audio_request():
     else:
         video_id = raw_url.split("?")[0].split("/")[-1]
 
+    # Yahan yt_dlp options ko simple aur robust banaya hai
     ydl_opts = {
+        'format': 'bestaudio/best' if req_type == 'audio' else 'best/best',
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
@@ -97,28 +99,20 @@ def handle_audio_request():
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-            media_url = None
+            media_url = info.get('url')
             
-            if 'formats' in info:
+            # Fallback agar direct url na mile toh formats list se pehla valid URL utha lo
+            if not media_url and 'formats' in info and len(info['formats']) > 0:
                 for f in info['formats']:
-                    if req_type == 'audio':
-                        # Audio-only stream dhoondho (jaise m4a ya webm audio)
-                        if f.get('acodec') != 'none' and f.get('vcodec') == 'none' and f.get('url'):
-                            media_url = f.get('url')
-                            break
-                    else:
-                        if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
-                            media_url = f.get('url')
-                            break
-            
-            if not media_url:
-                media_url = info.get('url')
+                    if f.get('url'):
+                        media_url = f.get('url')
+                        break
 
             if media_url:
                 return jsonify({
                     "status": "success", 
                     "stream_url": media_url,
-                    "title": info.get('title', 'track')
+                    "title": info.get('title', 'DJ_Track')
                 })
             return jsonify({"error": "Stream not found"}), 404
     except Exception as e:
@@ -130,4 +124,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+            
