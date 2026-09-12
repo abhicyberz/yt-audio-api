@@ -75,6 +75,8 @@ def search_youtube():
 @app.route("/", methods=["GET"])
 def handle_audio_request():
     raw_url = request.args.get("url", "").strip()
+    req_type = request.args.get("type", "video").strip()
+    
     if not raw_url: 
         return jsonify({"error": "Missing url"}), 400
 
@@ -95,16 +97,27 @@ def handle_audio_request():
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-            audio_url = info.get('url')
+            media_url = None
             
-            if not audio_url and 'formats' in info:
+            if 'formats' in info:
                 for f in info['formats']:
-                    if f.get('url'):
-                        audio_url = f.get('url')
-                        break
+                    if req_type == 'audio':
+                        # Strictly audio stream (acodec present, vcodec none)
+                        if f.get('acodec') != 'none' and f.get('vcodec') == 'none' and f.get('url'):
+                            media_url = f.get('url')
+                            break
+                    else:
+                        # Video with both audio and video or progressive mp4
+                        if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
+                            media_url = f.get('url')
+                            break
             
-            if audio_url:
-                return jsonify({"status": "success", "stream_url": audio_url})
+            # Fallback agar specific format na mile
+            if not media_url:
+                media_url = info.get('url')
+
+            if media_url:
+                return jsonify({"status": "success", "stream_url": media_url})
             return jsonify({"error": "Stream not found"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -115,4 +128,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
+    
