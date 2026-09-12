@@ -102,17 +102,14 @@ def handle_audio_request():
             if 'formats' in info:
                 for f in info['formats']:
                     if req_type == 'audio':
-                        # Strictly audio stream (acodec present, vcodec none)
-                        if f.get('acodec') != 'none' and f.get('vcodec') == 'none' and f.get('url'):
+                        if f.get('acodec') != 'none' and f.get('url'):
                             media_url = f.get('url')
                             break
                     else:
-                        # Video with both audio and video or progressive mp4
                         if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
                             media_url = f.get('url')
                             break
             
-            # Fallback agar specific format na mile
             if not media_url:
                 media_url = info.get('url')
 
@@ -128,4 +125,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+            
