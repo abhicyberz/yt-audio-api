@@ -1,7 +1,4 @@
 import os
-import time
-import random
-from pathlib import Path
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import yt_dlp
@@ -13,10 +10,9 @@ app = Flask(__name__)
 CORS(app)
 
 IOS_HEADERS = {
-    'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X; en_US)',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.5',
-    'Sec-Fetch-Mode': 'navigate',
 }
 
 @app.route("/channel-tracks", methods=["GET"])
@@ -28,17 +24,18 @@ def get_channel_tracks():
         'no_warnings': True,
         'playlistend': 50, 
         'http_headers': IOS_HEADERS,
-        'extractor_args': {'youtube': {'player_client': ['ios', 'web']}}
+        'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Yahan tum apna koi bhi channel URL daal sakte ho, default @dj_abhishek_dada set hai
             res = ydl.extract_info("https://www.youtube.com/@dj_abhishek_dada", download=False)
             entries = res.get('entries', [])
             tracks = [
                 {"id": item.get("id"), "title": item.get("title", "DJ Track"), "author": "DJ ABHISHEK DADA"}
                 for item in entries if item and item.get("id")
             ]
-            if not tracks: raise Exception("No tracks")
+            if not tracks: raise Exception("No tracks found")
             return jsonify({"status": "success", "tracks": tracks})
     except Exception as e:
         fallback_tracks = [
@@ -53,7 +50,8 @@ def get_channel_tracks():
 @app.route("/search", methods=["GET"])
 def search_youtube():
     query = request.args.get("q", "").strip()
-    if not query: return jsonify({"status": "error", "message": "Missing query"}), 400
+    if not query: 
+        return jsonify({"status": "error", "message": "Missing query"}), 400
 
     ydl_opts = {
         'extract_flat': 'in_playlist',
@@ -61,7 +59,7 @@ def search_youtube():
         'quiet': True,
         'no_warnings': True,
         'http_headers': IOS_HEADERS,
-        'extractor_args': {'youtube': {'player_client': ['ios', 'web']}}
+        'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -75,11 +73,11 @@ def search_youtube():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# 🎵 Direct High-Speed YouTube Audio Stream Extractor (For Audio Mode)
 @app.route("/", methods=["GET"])
 def handle_audio_request():
     raw_url = request.args.get("url", "").strip()
-    if not raw_url: return jsonify({"error": "Missing url"}), 400
+    if not raw_url: 
+        return jsonify({"error": "Missing url"}), 400
 
     if "v=" in raw_url:
         video_id = raw_url.split("v=")[-1].split("&")[0]
@@ -93,7 +91,7 @@ def handle_audio_request():
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
-        'extractor_args': {'youtube': {'player_client': ['ios', 'web']}},
+        'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}},
         'http_headers': IOS_HEADERS
     }
     try:
@@ -117,3 +115,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+                
