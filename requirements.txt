@@ -1,4 +1,4 @@
 flask
 flask-cors
-yt-dlp>=2025.01.01
+yt-dlp>=2026.03.01
 static-ffmpeg
