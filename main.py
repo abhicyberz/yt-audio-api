@@ -22,13 +22,12 @@ def get_channel_tracks():
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
-        'playlistend': 100,  # Limit ko thoda badha diya hai taaki aur tracks aayein
+        'playlistend': 100, 
         'http_headers': IOS_HEADERS,
         'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # /videos tab use karne se channel ke saare uploads proper extract hote hain
             res = ydl.extract_info("https://www.youtube.com/@dj_abhishek_dada/videos", download=False)
             entries = res.get('entries', [])
             tracks = [
@@ -87,22 +86,24 @@ def handle_audio_request():
         video_id = raw_url.split("?")[0].split("/")[-1]
 
     ydl_opts = {
-        'format': 'bestaudio/best',
+        'format': 'bestaudio',
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
-        'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}},
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
         'http_headers': IOS_HEADERS
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
             audio_url = info.get('url')
-            if not audio_url:
-                for f in info.get('formats', []):
+            
+            if not audio_url and 'formats' in info:
+                for f in info['formats']:
                     if f.get('acodec') != 'none' and f.get('vcodec') == 'none':
                         audio_url = f.get('url')
                         break
+            
             if audio_url:
                 return jsonify({"status": "success", "stream_url": audio_url})
             return jsonify({"error": "Stream not found"}), 404
