@@ -86,7 +86,6 @@ def handle_audio_request():
         video_id = raw_url.split("?")[0].split("/")[-1]
 
     ydl_opts = {
-        'format': 'bestaudio',
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
@@ -100,7 +99,7 @@ def handle_audio_request():
             
             if not audio_url and 'formats' in info:
                 for f in info['formats']:
-                    if f.get('acodec') != 'none' and f.get('vcodec') == 'none':
+                    if f.get('url'):
                         audio_url = f.get('url')
                         break
             
@@ -116,4 +115,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+        
