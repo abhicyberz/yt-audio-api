@@ -87,9 +87,9 @@ def handle_audio_request():
     else:
         video_id = raw_url.split("?")[0].split("/")[-1]
 
-    # Yahan yt_dlp options ko simple aur robust banaya hai
+    # Audio ke liye strictly m4a / bestaudio format maangenge
     ydl_opts = {
-        'format': 'bestaudio/best' if req_type == 'audio' else 'best/best',
+        'format': 'bestaudio[ext=m4a]/bestaudio/best' if req_type == 'audio' else 'best/best',
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
@@ -99,14 +99,21 @@ def handle_audio_request():
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-            media_url = info.get('url')
-            
-            # Fallback agar direct url na mile toh formats list se pehla valid URL utha lo
-            if not media_url and 'formats' in info and len(info['formats']) > 0:
+            media_url = None
+
+            if 'formats' in info:
                 for f in info['formats']:
-                    if f.get('url'):
-                        media_url = f.get('url')
-                        break
+                    if req_type == 'audio':
+                        if f.get('acodec') != 'none' and f.get('vcodec') == 'none' and f.get('url'):
+                            media_url = f.get('url')
+                            break
+                    else:
+                        if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
+                            media_url = f.get('url')
+                            break
+            
+            if not media_url:
+                media_url = info.get('url')
 
             if media_url:
                 return jsonify({
@@ -124,4 +131,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-            
+    
