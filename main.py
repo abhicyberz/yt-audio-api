@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import yt_dlp
 import static_ffmpeg
@@ -72,7 +72,7 @@ def search_youtube():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# 1. Video Download Route (MP4 - jaise pehle tha)
+# Video Download Route (MP4)
 @app.route("/download-video", methods=["GET"])
 def download_video():
     raw_url = request.args.get("url", "").strip()
@@ -97,7 +97,7 @@ def download_video():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# 2. Audio Download Route (Direct MP3 Server File Generation)
+# Audio Download Route (MP3 Server Conversion)
 @app.route("/download-audio", methods=["GET"])
 def download_audio():
     raw_url = request.args.get("url", "").strip()
@@ -131,7 +131,7 @@ def download_audio():
                     with open(mp3_filename, "rb") as f:
                         yield from f
                     try:
-                        os.remove(mp3_filename) # Cleanup file after sending
+                        os.remove(mp3_filename)
                     except:
                         pass
 
@@ -148,3 +148,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
