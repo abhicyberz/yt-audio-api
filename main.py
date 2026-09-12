@@ -87,9 +87,7 @@ def handle_audio_request():
     else:
         video_id = raw_url.split("?")[0].split("/")[-1]
 
-    # Agar type=audio hai toh specifically bestaudio format nikalenge
     ydl_opts = {
-        'format': 'bestaudio[ext=m4a]/bestaudio/best' if req_type == 'audio' else 'best/best',
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
@@ -104,8 +102,7 @@ def handle_audio_request():
             if 'formats' in info:
                 for f in info['formats']:
                     if req_type == 'audio':
-                        # Strictly audio-only stream check (acodec not none, vcodec is none)
-                        if f.get('acodec') != 'none' and f.get('vcodec') == 'none' and f.get('url'):
+                        if f.get('acodec') != 'none' and f.get('url'):
                             media_url = f.get('url')
                             break
                     else:
@@ -128,3 +125,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+            
