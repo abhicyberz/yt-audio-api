@@ -22,14 +22,14 @@ def get_channel_tracks():
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
-        'playlistend': 50, 
+        'playlistend': 100,  # Limit ko thoda badha diya hai taaki aur tracks aayein
         'http_headers': IOS_HEADERS,
         'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Yahan tum apna koi bhi channel URL daal sakte ho, default @dj_abhishek_dada set hai
-            res = ydl.extract_info("https://www.youtube.com/@dj_abhishek_dada", download=False)
+            # /videos tab use karne se channel ke saare uploads proper extract hote hain
+            res = ydl.extract_info("https://www.youtube.com/@dj_abhishek_dada/videos", download=False)
             entries = res.get('entries', [])
             tracks = [
                 {"id": item.get("id"), "title": item.get("title", "DJ Track"), "author": "DJ ABHISHEK DADA"}
@@ -87,7 +87,7 @@ def handle_audio_request():
         video_id = raw_url.split("?")[0].split("/")[-1]
 
     ydl_opts = {
-        'format': 'ba[ext=m4a]/ba/b',
+        'format': 'bestaudio/best',
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
@@ -115,4 +115,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-                
+    
