@@ -87,50 +87,39 @@ def handle_audio_request():
     else:
         video_id = raw_url.split("?")[0].split("/")[-1]
 
-    # Agar type=audio hai toh yt_dlp ko bolenge ki direct MP3 extract/convert karke stream kare
-    if req_type == 'audio':
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'quiet': True,
-            'no_warnings': True,
-            'skip_download': True,
-            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
-            'http_headers': IOS_HEADERS
-        }
-    else:
-        ydl_opts = {
-            'format': 'best/best',
-            'quiet': True,
-            'no_warnings': True,
-            'skip_download': True,
-            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
-            'http_headers': IOS_HEADERS
-        }
-
+    ydl_opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+        'http_headers': IOS_HEADERS
+    }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            media_url = None
             
-            # Agar audio ke liye postprocessor URL na mile toh formats me se dhoondo
-            media_url = info.get('url')
-            if not media_url and 'formats' in info:
+            if 'formats' in info:
                 for f in info['formats']:
-                    if req_type == 'audio' and f.get('acodec') != 'none' and f.get('url'):
-                        media_url = f.get('url')
-                        break
-                    elif req_type == 'video' and f.get('vcodec') != 'none' and f.get('url'):
-                        media_url = f.get('url')
-                        break
+                    if req_type == 'audio':
+                        # Audio-only stream dhoondho (jaise m4a ya webm audio)
+                        if f.get('acodec') != 'none' and f.get('vcodec') == 'none' and f.get('url'):
+                            media_url = f.get('url')
+                            break
+                    else:
+                        if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
+                            media_url = f.get('url')
+                            break
+            
+            if not media_url:
+                media_url = info.get('url')
 
             if media_url:
-                # Agar audio hai toh JSON ke bajaye direct redirect ya stream bhej sakte hain, 
-                # par hum JSON hi bhejenge taaki frontend ka download trigger asani se chale.
-                return jsonify({"status": "success", "stream_url": media_url})
+                return jsonify({
+                    "status": "success", 
+                    "stream_url": media_url,
+                    "title": info.get('title', 'track')
+                })
             return jsonify({"error": "Stream not found"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -141,4 +130,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-                    
+    
