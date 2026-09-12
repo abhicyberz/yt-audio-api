@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import yt_dlp
 import static_ffmpeg
@@ -72,24 +72,15 @@ def search_youtube():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route("/", methods=["GET"])
-def handle_audio_request():
+# 1. Video Download Route (MP4 - jaise pehle tha)
+@app.route("/download-video", methods=["GET"])
+def download_video():
     raw_url = request.args.get("url", "").strip()
-    req_type = request.args.get("type", "video").strip()
-    
-    if not raw_url: 
-        return jsonify({"error": "Missing url"}), 400
+    if not raw_url: return jsonify({"error": "Missing url"}), 400
+    video_id = raw_url.split("v=")[-1].split("&")[0] if "v=" in raw_url else raw_url.split("/")[-1]
 
-    if "v=" in raw_url:
-        video_id = raw_url.split("v=")[-1].split("&")[0]
-    elif len(raw_url) == 11 and "/" not in raw_url:
-        video_id = raw_url
-    else:
-        video_id = raw_url.split("?")[0].split("/")[-1]
-
-    # Audio ke liye strictly m4a / bestaudio format maangenge
     ydl_opts = {
-        'format': 'bestaudio[ext=m4a]/bestaudio/best' if req_type == 'audio' else 'best/best',
+        'format': 'best/best',
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
@@ -99,29 +90,55 @@ def handle_audio_request():
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-            media_url = None
-
-            if 'formats' in info:
-                for f in info['formats']:
-                    if req_type == 'audio':
-                        if f.get('acodec') != 'none' and f.get('vcodec') == 'none' and f.get('url'):
-                            media_url = f.get('url')
-                            break
-                    else:
-                        if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url'):
-                            media_url = f.get('url')
-                            break
-            
-            if not media_url:
-                media_url = info.get('url')
-
+            media_url = info.get('url')
             if media_url:
-                return jsonify({
-                    "status": "success", 
-                    "stream_url": media_url,
-                    "title": info.get('title', 'DJ_Track')
+                return jsonify({"status": "success", "stream_url": media_url})
+            return jsonify({"error": "Video stream not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# 2. Audio Download Route (Direct MP3 Server File Generation)
+@app.route("/download-audio", methods=["GET"])
+def download_audio():
+    raw_url = request.args.get("url", "").strip()
+    if not raw_url: return jsonify({"error": "Missing url"}), 400
+    video_id = raw_url.split("v=")[-1].split("&")[0] if "v=" in raw_url else raw_url.split("/")[-1]
+
+    output_template = f"temp_{video_id}.%(ext)s"
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': output_template,
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        'quiet': True,
+        'no_warnings': True,
+        'http_headers': IOS_HEADERS
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
+            filename = ydl.prepare_filename(info)
+            mp3_filename = os.path.splitext(filename)[0] + ".mp3"
+            
+            if os.path.exists(mp3_filename):
+                title = info.get('title', 'DJ_ABHISHEK_DADA')
+                clean_title = "".join(c for c in title if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+                
+                def generate():
+                    with open(mp3_filename, "rb") as f:
+                        yield from f
+                    try:
+                        os.remove(mp3_filename) # Cleanup file after sending
+                    except:
+                        pass
+
+                return Response(generate(), mimetype="audio/mpeg", headers={
+                    "Content-Disposition": f"attachment; filename={clean_title}.mp3"
                 })
-            return jsonify({"error": "Stream not found"}), 404
+        return jsonify({"error": "Could not generate MP3"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -131,4 +148,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
