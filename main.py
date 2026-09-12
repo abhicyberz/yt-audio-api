@@ -19,9 +19,9 @@ CORS(app)
 
 DOWNLOAD_SEMAPHORE = BoundedSemaphore(value=2)
 
-COMMON_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+IOS_HEADERS = {
+    'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X; en_US)',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.5',
     'Sec-Fetch-Mode': 'navigate',
 }
@@ -35,10 +35,10 @@ def get_channel_tracks():
         'quiet': True,
         'no_warnings': True,
         'playlistend': 500, 
-        'http_headers': COMMON_HEADERS,
+        'http_headers': IOS_HEADERS,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android_creator', 'web'],
+                'player_client': ['ios'],
             }
         }
     }
@@ -70,10 +70,10 @@ def search_youtube():
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
-        'http_headers': COMMON_HEADERS,
+        'http_headers': IOS_HEADERS,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android_creator', 'web'],
+                'player_client': ['ios'],
             }
         }
     }
@@ -93,7 +93,7 @@ def search_youtube():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ⬇ Audio Download Pipeline (Anti-Bot & 403 Forbidden Fix)
+# ⬇ Audio Download Pipeline (Anti-Bot & Bot-Wall Bypass)
 @app.route("/", methods=["GET"])
 def handle_audio_request():
     raw_url = request.args.get("url", "").strip()
@@ -116,11 +116,11 @@ def handle_audio_request():
         'outtmpl': output_path,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android_creator', 'web'],
+                'player_client': ['ios'],
                 'player_skip': ['configs', 'webpage'],
             }
         },
-        'http_headers': COMMON_HEADERS,
+        'http_headers': IOS_HEADERS,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
