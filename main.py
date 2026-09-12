@@ -19,7 +19,6 @@ CORS(app)
 
 DOWNLOAD_SEMAPHORE = BoundedSemaphore(value=2)
 
-# Common robust headers to bypass bot detection
 COMMON_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -35,11 +34,11 @@ def get_channel_tracks():
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
-        'playlistend': 500,
+        'playlistend': 500, 
         'http_headers': COMMON_HEADERS,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'web', 'mweb'],
+                'player_client': ['android_creator', 'web'],
             }
         }
     }
@@ -74,7 +73,7 @@ def search_youtube():
         'http_headers': COMMON_HEADERS,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'web'],
+                'player_client': ['android_creator', 'web'],
             }
         }
     }
@@ -94,7 +93,7 @@ def search_youtube():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ⬇ Audio Download Pipeline (Anti-Bot & Client Bypass Fix)
+# ⬇ Audio Download Pipeline (Anti-Bot & 403 Forbidden Fix)
 @app.route("/", methods=["GET"])
 def handle_audio_request():
     raw_url = request.args.get("url", "").strip()
@@ -117,15 +116,11 @@ def handle_audio_request():
         'outtmpl': output_path,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios', 'web'],
+                'player_client': ['android_creator', 'web'],
                 'player_skip': ['configs', 'webpage'],
             }
         },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Sec-Fetch-Mode': 'navigate'
-        },
+        'http_headers': COMMON_HEADERS,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -137,18 +132,14 @@ def handle_audio_request():
     }
 
     with DOWNLOAD_SEMAPHORE:
-        time.sleep(random.uniform(1.5, 3.0)) # Thoda lamba delay taaki rate limit na aaye
+        time.sleep(random.uniform(1.0, 2.0))
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=True)
                 final_mp3 = str(ABS_DOWNLOADS_PATH / f"{file_id}.mp3")
 
             title = info.get('title', 'audio').replace('/', '_').replace('\\', '_')
-            
-            # File send karne ke baad /tmp folder saaf karne ka mechanism optional hai, 
-            # par background me /tmp clean rakhna zaroori hai taki storage full na ho.
-            response = send_file(final_mp3, as_attachment=True, download_name=f"{title}.mp3", mimetype="audio/mpeg")
-            return response
+            return send_file(final_mp3, as_attachment=True, download_name=f"{title}.mp3", mimetype="audio/mpeg")
         except Exception as e:
             return jsonify({"error": "Download failed", "detail": str(e)}), 500
 
@@ -158,4 +149,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+        
