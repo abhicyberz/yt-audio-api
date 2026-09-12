@@ -19,6 +19,14 @@ CORS(app)
 
 DOWNLOAD_SEMAPHORE = BoundedSemaphore(value=2)
 
+# Common robust headers to bypass bot detection
+COMMON_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Sec-Fetch-Mode': 'navigate',
+}
+
 # 🎵 Live Channel Fetch (Limit 500 Songs)
 @app.route("/channel-tracks", methods=["GET"])
 def get_channel_tracks():
@@ -27,7 +35,13 @@ def get_channel_tracks():
         'skip_download': True,
         'quiet': True,
         'no_warnings': True,
-        'playlistend': 500, 
+        'playlistend': 500,
+        'http_headers': COMMON_HEADERS,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web', 'mweb'],
+            }
+        }
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -56,7 +70,13 @@ def search_youtube():
         'extract_flat': 'in_playlist',
         'skip_download': True,
         'quiet': True,
-        'no_warnings': True
+        'no_warnings': True,
+        'http_headers': COMMON_HEADERS,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web'],
+            }
+        }
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -92,18 +112,17 @@ def handle_audio_request():
     file_id = str(uuid4())
     output_path = str(ABS_DOWNLOADS_PATH / f"{file_id}.%(ext)s")
 
-    # Anti-bot bypass configurations using official mobile clients
     ydl_opts = {
         'format': 'ba/b',
         'outtmpl': output_path,
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios'],
+                'player_client': ['android', 'ios', 'web'],
                 'player_skip': ['configs', 'webpage'],
             }
         },
         'http_headers': {
-            'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X; en_US)',
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
             'Accept-Language': 'en-US,en;q=0.9',
             'Sec-Fetch-Mode': 'navigate'
         },
@@ -118,14 +137,18 @@ def handle_audio_request():
     }
 
     with DOWNLOAD_SEMAPHORE:
-        time.sleep(random.uniform(1.0, 2.0))
+        time.sleep(random.uniform(1.5, 3.0)) # Thoda lamba delay taaki rate limit na aaye
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=True)
                 final_mp3 = str(ABS_DOWNLOADS_PATH / f"{file_id}.mp3")
 
             title = info.get('title', 'audio').replace('/', '_').replace('\\', '_')
-            return send_file(final_mp3, as_attachment=True, download_name=f"{title}.mp3", mimetype="audio/mpeg")
+            
+            # File send karne ke baad /tmp folder saaf karne ka mechanism optional hai, 
+            # par background me /tmp clean rakhna zaroori hai taki storage full na ho.
+            response = send_file(final_mp3, as_attachment=True, download_name=f"{title}.mp3", mimetype="audio/mpeg")
+            return response
         except Exception as e:
             return jsonify({"error": "Download failed", "detail": str(e)}), 500
 
@@ -135,3 +158,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
