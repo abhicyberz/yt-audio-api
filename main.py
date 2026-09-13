@@ -20,22 +20,38 @@ def extract_video_id(url_or_id: str) -> str:
             return match.group(1)
     return url_or_id
 
+# Strict iOS Client Config to bypass YouTube bot checking
+IOS_YTDL_OPTS = {
+    'quiet': True,
+    'no_warnings': True,
+    'skip_download': True,
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['ios'],
+            'player_skip': ['webpage', 'configs']
+        }
+    },
+    'http_headers': {
+        'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X; en_US)',
+        'Accept-Language': 'en-US,en;q=0.9',
+    }
+}
+
 @app.route("/", methods=["GET"])
 def health_check():
     return jsonify({"status": "online", "portal": "DJ ABHISHEK DADA"})
 
 @app.route("/channel-tracks", methods=["GET"])
 def get_channel_tracks():
-    ydl_opts = {
+    opts = {
         'extract_flat': 'in_playlist',
         'skip_download': True,
         'quiet': True,
-        'no_warnings': True,
         'playlistend': 500,
-        'extractor_args': {'youtube': {'player_client': ['android']}}
+        'extractor_args': {'youtube': {'player_client': ['ios']}}
     }
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(opts) as ydl:
             res = ydl.extract_info("https://www.youtube.com/@dj_abhishek_dada/videos", download=False)
             entries = res.get('entries', []) or []
             tracks = [
@@ -56,15 +72,14 @@ def search_youtube():
     if not query:
         return jsonify({"status": "error", "message": "Missing search query"}), 400
 
-    ydl_opts = {
+    opts = {
         'extract_flat': 'in_playlist',
         'skip_download': True,
         'quiet': True,
-        'no_warnings': True,
-        'extractor_args': {'youtube': {'player_client': ['android']}}
+        'extractor_args': {'youtube': {'player_client': ['ios']}}
     }
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(opts) as ydl:
             res = ydl.extract_info(f"ytsearch50:{query}", download=False)
             entries = res.get('entries', []) or []
             results = [
@@ -86,32 +101,27 @@ def handle_audio_download():
         return jsonify({"status": "error", "message": "Missing url parameter"}), 400
 
     vid = extract_video_id(raw_url)
-    video_url = f"https://www.youtube.com/watch?v={vid}"
+    target_url = f"https://www.youtube.com/watch?v={vid}"
 
-    ydl_opts = {
-        'format': 'ba/b',
-        'quiet': True,
-        'no_warnings': True,
-        'skip_download': True,
-        'extractor_args': {'youtube': {'player_client': ['android', 'ios']}}
-    }
+    opts = dict(IOS_YTDL_OPTS)
+    opts['format'] = 'ba/b'
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(target_url, download=False)
             stream_url = info.get('url')
             
             if not stream_url and 'formats' in info:
-                audio_formats = [f for f in info['formats'] if f.get('vcodec') == 'none' and f.get('url')]
-                stream_url = audio_formats[-1]['url'] if audio_formats else info['formats'][-1].get('url')
+                audios = [f for f in info['formats'] if f.get('vcodec') == 'none' and f.get('url')]
+                stream_url = audios[-1]['url'] if audios else info['formats'][-1].get('url')
 
             if not stream_url:
-                return jsonify({"status": "error", "message": "Stream URL not found"}), 404
+                return jsonify({"status": "error", "message": "Audio stream link not found"}), 404
 
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
 
-            # Stream pipe with forced attachment header (direct phone download)
+            # Stream pipe to client as direct download
             req = requests.get(stream_url, stream=True)
             return Response(
                 stream_with_context(req.iter_content(chunk_size=1024 * 64)),
@@ -131,19 +141,14 @@ def handle_video_download():
         return jsonify({"status": "error", "message": "Missing url parameter"}), 400
 
     vid = extract_video_id(raw_url)
-    video_url = f"https://www.youtube.com/watch?v={vid}"
+    target_url = f"https://www.youtube.com/watch?v={vid}"
 
-    ydl_opts = {
-        'format': 'best[ext=mp4]/best',
-        'quiet': True,
-        'no_warnings': True,
-        'skip_download': True,
-        'extractor_args': {'youtube': {'player_client': ['android', 'ios']}}
-    }
+    opts = dict(IOS_YTDL_OPTS)
+    opts['format'] = 'best[ext=mp4]/best'
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(target_url, download=False)
             stream_url = info.get('url')
 
             if not stream_url and 'formats' in info:
@@ -151,7 +156,7 @@ def handle_video_download():
                 stream_url = prog[-1]['url'] if prog else info['formats'][-1].get('url')
 
             if not stream_url:
-                return jsonify({"status": "error", "message": "Video stream not found"}), 404
+                return jsonify({"status": "error", "message": "Video stream link not found"}), 404
 
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
@@ -174,4 +179,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
+    
