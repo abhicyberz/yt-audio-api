@@ -12,7 +12,6 @@ CORS(app)
 BASE_DIR = Path(__file__).resolve().parent
 COOKIE_FILE = BASE_DIR / "cookies.txt"
 
-# Modern Android User Agent (Google bot check bypass ke liye)
 ANDROID_USER_AGENT = "com.google.android.youtube/19.29.37 (Linux; U; Android 11; US) gzip"
 
 def extract_video_id(url_or_id: str) -> str:
@@ -32,7 +31,6 @@ def get_base_opts():
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
-        # Android client direct extraction ke liye best hai (Bot bypass karta hai)
         'extractor_args': {
             'youtube': {
                 'player_client': ['android', 'ios']
@@ -105,7 +103,6 @@ def download_audio():
             stream_url = None
             selected_headers = info.get('http_headers', {})
 
-            # Best Audio-only stream
             for f in reversed(formats):
                 if f.get('url') and f.get('vcodec') == 'none' and f.get('acodec') != 'none':
                     stream_url = f['url']
@@ -122,13 +119,21 @@ def download_audio():
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
 
-            # YouTube CDN ke matching headers ke sath request bhejni zaroori hai
-            req = requests.get(stream_url, headers=selected_headers, stream=True, timeout=30)
-            
+            headers = {
+                'User-Agent': selected_headers.get('User-Agent', ANDROID_USER_AGENT),
+                'Accept': '*/*',
+                'Connection': 'keep-alive'
+            }
+            req = requests.get(stream_url, headers=headers, stream=True, timeout=25)
+            c_type = req.headers.get('Content-Type', 'audio/mp4')
+
             return Response(
                 stream_with_context(req.iter_content(chunk_size=1024 * 64)),
-                content_type=req.headers.get('Content-Type', 'audio/mpeg'),
-                headers={"Content-Disposition": f'attachment; filename="{clean_title}.mp3"'}
+                content_type=c_type,
+                headers={
+                    "Content-Disposition": f'attachment; filename="{clean_title}.mp3"',
+                    "Accept-Ranges": "bytes"
+                }
             )
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -147,7 +152,6 @@ def download_video():
             stream_url = None
             selected_headers = info.get('http_headers', {})
 
-            # Progressive MP4 (Audio + Video dono sath me)
             for f in reversed(formats):
                 if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
                     stream_url = f['url']
@@ -164,12 +168,21 @@ def download_video():
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
 
-            req = requests.get(stream_url, headers=selected_headers, stream=True, timeout=30)
-            
+            headers = {
+                'User-Agent': selected_headers.get('User-Agent', ANDROID_USER_AGENT),
+                'Accept': '*/*',
+                'Connection': 'keep-alive'
+            }
+            req = requests.get(stream_url, headers=headers, stream=True, timeout=25)
+            c_type = req.headers.get('Content-Type', 'video/mp4')
+
             return Response(
                 stream_with_context(req.iter_content(chunk_size=1024 * 128)),
-                content_type=req.headers.get('Content-Type', 'video/mp4'),
-                headers={"Content-Disposition": f'attachment; filename="{clean_title}.mp4"'}
+                content_type=c_type,
+                headers={
+                    "Content-Disposition": f'attachment; filename="{clean_title}.mp4"',
+                    "Accept-Ranges": "bytes"
+                }
             )
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -180,4 +193,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-                    
+        
