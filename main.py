@@ -9,7 +9,6 @@ import yt_dlp
 app = Flask(__name__)
 CORS(app)
 
-# Auto-detect cookies.txt from any possible container directory
 def find_cookies_file():
     candidates = [
         Path("cookies.txt"),
@@ -21,8 +20,6 @@ def find_cookies_file():
         if p.is_file() and p.stat().st_size > 50:
             return str(p)
     return None
-
-COOKIE_PATH = find_cookies_file()
 
 def extract_video_id(url_or_id: str) -> str:
     patterns = [
@@ -36,23 +33,21 @@ def extract_video_id(url_or_id: str) -> str:
             return match.group(1)
     return url_or_id
 
-def get_ytdl_opts(format_str):
+def get_ytdl_base_opts():
     opts = {
-        'format': format_str,
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
         'socket_timeout': 30,
         'extractor_args': {
             'youtube': {
-                'player_client': ['web_creator', 'android'],
+                'player_client': ['web', 'android'],
                 'player_skip': ['configs']
             }
         },
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
-            'Sec-Fetch-Mode': 'navigate'
         }
     }
     cookie_file = find_cookies_file()
@@ -72,7 +67,7 @@ def health_check():
 
 @app.route("/channel-tracks", methods=["GET"])
 def get_channel_tracks():
-    opts = get_ytdl_opts('best')
+    opts = get_ytdl_base_opts()
     opts['extract_flat'] = 'in_playlist'
     opts['playlistend'] = 500
     try:
@@ -97,7 +92,7 @@ def search_youtube():
     if not query:
         return jsonify({"status": "error", "message": "Missing search query"}), 400
 
-    opts = get_ytdl_opts('best')
+    opts = get_ytdl_base_opts()
     opts['extract_flat'] = 'in_playlist'
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -124,7 +119,9 @@ def handle_audio_download():
     vid = extract_video_id(raw_url)
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
-    opts = get_ytdl_opts('bestaudio/best')
+    opts = get_ytdl_base_opts()
+    # Format fallback: bestaudio -> m4a/mp3 -> any audio
+    opts['format'] = 'bestaudio/bestaudio*/best'
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -145,7 +142,6 @@ def handle_audio_download():
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
 
-            # Stream pipe directly to client
             req = requests.get(stream_url, stream=True, timeout=30)
             return Response(
                 stream_with_context(req.iter_content(chunk_size=1024 * 64)),
@@ -167,18 +163,29 @@ def handle_video_download():
     vid = extract_video_id(raw_url)
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
-    opts = get_ytdl_opts('best[ext=mp4]/best')
+    opts = get_ytdl_base_opts()
+    # Format fallback: Progressive MP4 pehle dhundhega, fir koi bhi available combined progressive stream
+    opts['format'] = 'best[ext=mp4][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]/best'
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(target_url, download=False)
             stream_url = info.get('url')
 
+            # Fallback manual format filter agar ydl ne direct URL na diya ho
             if not stream_url and 'formats' in info:
+                # 1. Progressive mp4 (Audio + Video dono sath me)
                 for f in reversed(info['formats']):
-                    if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
+                    if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('ext') == 'mp4':
                         stream_url = f['url']
                         break
+                # 2. Koi bhi progressive video
+                if not stream_url:
+                    for f in reversed(info['formats']):
+                        if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
+                            stream_url = f['url']
+                            break
+                # 3. Last fallback
                 if not stream_url:
                     stream_url = info['formats'][-1].get('url')
 
@@ -206,4 +213,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-                    
+            
