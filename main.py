@@ -53,7 +53,6 @@ def health():
         "cookies_loaded": COOKIE_FILE.is_file()
     })
 
-# Super-fast channel loader (Under 1 second)
 @app.route("/channel-tracks", methods=["GET"])
 def channel_tracks():
     opts = {
@@ -82,7 +81,6 @@ def channel_tracks():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# Universal Search Endpoint
 @app.route("/search", methods=["GET"])
 def search_tracks():
     q = request.args.get("q", "").strip()
@@ -118,7 +116,6 @@ def search_tracks():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# High-Performance Audio Stream & Direct MP3 Downloader
 @app.route("/download-audio", methods=["GET"])
 def download_audio():
     raw_url = request.args.get("url", "").strip()
@@ -126,22 +123,20 @@ def download_audio():
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
     opts = get_base_opts()
+    opts['format'] = 'ba/b'
+
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(target_url, download=False)
-            formats = info.get('formats', []) or []
-            stream_url = None
+            stream_url = info.get('url')
             selected_headers = info.get('http_headers', {})
 
-            for f in reversed(formats):
-                if f.get('url') and f.get('vcodec') == 'none' and f.get('acodec') != 'none':
-                    stream_url = f['url']
-                    if f.get('http_headers'):
-                        selected_headers = f['http_headers']
-                    break
-
-            if not stream_url:
-                stream_url = info.get('url')
+            if not stream_url and info.get('formats'):
+                for f in reversed(info['formats']):
+                    if f.get('acodec') != 'none' and f.get('url'):
+                        stream_url = f['url']
+                        selected_headers = f.get('http_headers', selected_headers)
+                        break
 
             if not stream_url:
                 return jsonify({"status": "error", "message": "Audio stream unavailable"}), 404
@@ -168,7 +163,6 @@ def download_audio():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# High-Performance MP4 Video Downloader
 @app.route("/download-video", methods=["GET"])
 def download_video():
     raw_url = request.args.get("url", "").strip()
@@ -176,22 +170,20 @@ def download_video():
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
     opts = get_base_opts()
+    opts['format'] = 'best[ext=mp4]/best'
+
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(target_url, download=False)
-            formats = info.get('formats', []) or []
-            stream_url = None
+            stream_url = info.get('url')
             selected_headers = info.get('http_headers', {})
 
-            for f in reversed(formats):
-                if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
-                    stream_url = f['url']
-                    if f.get('http_headers'):
-                        selected_headers = f['http_headers']
-                    break
-
-            if not stream_url:
-                stream_url = info.get('url')
+            if not stream_url and info.get('formats'):
+                for f in reversed(info['formats']):
+                    if f.get('vcodec') != 'none' and f.get('url'):
+                        stream_url = f['url']
+                        selected_headers = f.get('http_headers', selected_headers)
+                        break
 
             if not stream_url:
                 return jsonify({"status": "error", "message": "Video stream unavailable"}), 404
