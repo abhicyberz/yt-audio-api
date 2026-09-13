@@ -1,151 +1,175 @@
 import os
-from flask import Flask, request, jsonify, Response
-from flask_cors import CORS
+import re
+from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import yt_dlp
-import static_ffmpeg
 
-static_ffmpeg.add_paths()
+app = FastAPI(title="DJ ABHISHEK DADA Music API")
 
-app = Flask(__name__)
-CORS(app)
+# Allow frontend to communicate with backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-IOS_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
+# Extraction configuration using Android & iOS clients to bypass bot blocks
+BASE_YTDL_OPTS = {
+    'quiet': True,
+    'no_warnings': True,
+    'skip_download': True,
+    'extract_flat': False,
+    'socket_timeout': 15,
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['android', 'ios', 'web_embedded'],
+            'player_skip': ['webpage', 'configs']
+        }
+    },
+    'http_headers': {
+        'User-Agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip',
+        'Accept-Language': 'en-US,en;q=0.9'
+    }
 }
 
-@app.route("/channel-tracks", methods=["GET"])
+def extract_video_id(url_or_id: str) -> str:
+    """Extract 11 character YouTube video id."""
+    patterns = [
+        r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
+        r'(?:youtu\.be\/)([0-9A-Za-z_-]{11})',
+        r'^([0-9A-Za-z_-]{11})$'
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url_or_id)
+        if match:
+            return match.group(1)
+    return url_or_id
+
+@app.get("/")
+def health_check():
+    return {"status": "online", "portal": "DJ ABHISHEK DADA"}
+
+@app.get("/channel-tracks")
 def get_channel_tracks():
-    ydl_opts = {
-        'extract_flat': 'in_playlist',
-        'skip_download': True,
+    """Fetches uploaded mix tracks from the official channel."""
+    channel_url = "https://www.youtube.com/@DJABHISHEKDADA/videos"
+    opts = {
+        'extract_flat': True,
         'quiet': True,
-        'no_warnings': True,
-        'playlistend': 100, 
-        'http_headers': IOS_HEADERS,
-        'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
+        'playlistend': 50,
+        'extractor_args': {'youtube': {'player_client': ['android']}}
     }
+    
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            res = ydl.extract_info("https://www.youtube.com/@dj_abhishek_dada/videos", download=False)
-            entries = res.get('entries', [])
-            tracks = [
-                {"id": item.get("id"), "title": item.get("title", "DJ Track"), "author": "DJ ABHISHEK DADA"}
-                for item in entries if item and item.get("id")
-            ]
-            if not tracks: raise Exception("No tracks found")
-            return jsonify({"status": "success", "tracks": tracks})
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            res = ydl.extract_info(channel_url, download=False)
+            entries = res.get('entries', []) or []
+            tracks = []
+            for entry in entries:
+                if entry and entry.get('id'):
+                    tracks.append({
+                        "id": entry.get('id'),
+                        "title": entry.get('title', 'Unknown Track'),
+                        "author": entry.get('uploader') or "DJ ABHISHEK DADA"
+                    })
+            return {"status": "success", "tracks": tracks}
     except Exception as e:
-        fallback_tracks = [
-            { "id": "Mnr1eLcCejg", "title": "Ganjawa Pike Bolbam (Humming Bass) Sawan Special", "author": "DJ ABHISHEK DADA" },
-            { "id": "YOUD_pqObe0", "title": "Hum Pyar Karne Wale Remix | Hard Bass Mix", "author": "DJ ABHISHEK DADA" },
-            { "id": "5-_oKgZhDww", "title": "Gaura Ho Has Da Na (Pawan Singh) Bol Bam Special", "author": "DJ ABHISHEK DADA" },
-            { "id": "hakt6kJ4UaA", "title": "Instagram Trending Mix 2026 | Hard Bass Vibration", "author": "DJ ABHISHEK DADA" },
-            { "id": "132gBeW2_QA", "title": "Sound Testing | Dj Lucky X Dj Abhishek | Barat SPL", "author": "DJ ABHISHEK DADA" }
-        ]
-        return jsonify({"status": "success", "tracks": fallback_tracks})
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
-@app.route("/search", methods=["GET"])
-def search_youtube():
-    query = request.args.get("q", "").strip()
-    if not query: 
-        return jsonify({"status": "error", "message": "Missing query"}), 400
-
-    ydl_opts = {
-        'extract_flat': 'in_playlist',
-        'skip_download': True,
+@app.get("/search")
+def search_tracks(q: str = Query(..., min_length=1)):
+    """Search remixes on YouTube."""
+    opts = {
+        'extract_flat': True,
         'quiet': True,
-        'no_warnings': True,
-        'http_headers': IOS_HEADERS,
-        'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'web']}}
+        'default_search': 'ytsearch15',
+        'extractor_args': {'youtube': {'player_client': ['android']}}
     }
+    
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            res = ydl.extract_info(f"ytsearch50:{query}", download=False)
-            entries = res.get('entries', [])
-            results = [
-                {"id": item.get("id"), "title": item.get("title", "YouTube Track"), "author": item.get("uploader", "YouTube Creator")}
-                for item in entries if item and item.get("id")
-            ]
-            return jsonify({"status": "success", "tracks": results})
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            res = ydl.extract_info(f"ytsearch15:{q}", download=False)
+            entries = res.get('entries', []) or []
+            tracks = []
+            for entry in entries:
+                if entry and entry.get('id'):
+                    tracks.append({
+                        "id": entry.get('id'),
+                        "title": entry.get('title', 'Unknown Track'),
+                        "author": entry.get('uploader') or "YouTube Artist"
+                    })
+            return {"status": "success", "tracks": tracks}
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
-# Video Download Route (MP4)
-@app.route("/download-video", methods=["GET"])
-def download_video():
-    raw_url = request.args.get("url", "").strip()
-    if not raw_url: return jsonify({"error": "Missing url"}), 400
-    video_id = raw_url.split("v=")[-1].split("&")[0] if "v=" in raw_url else raw_url.split("/")[-1]
+@app.get("/download-audio")
+def get_audio_stream(url: str = Query(...)):
+    """Extracts direct playback/download CDN stream URL for audio (MP3)."""
+    vid = extract_video_id(url)
+    target_url = f"https://www.youtube.com/watch?v={vid}"
 
-    ydl_opts = {
-        'format': 'best/best',
-        'quiet': True,
-        'no_warnings': True,
-        'skip_download': True,
-        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
-        'http_headers': IOS_HEADERS
-    }
+    opts = dict(BASE_YTDL_OPTS)
+    opts['format'] = 'bestaudio/best'
+
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-            media_url = info.get('url')
-            if media_url:
-                return jsonify({"status": "success", "stream_url": media_url})
-            return jsonify({"error": "Video stream not found"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# Audio Download Route (MP3 Server Conversion)
-@app.route("/download-audio", methods=["GET"])
-def download_audio():
-    raw_url = request.args.get("url", "").strip()
-    if not raw_url: return jsonify({"error": "Missing url"}), 400
-    video_id = raw_url.split("v=")[-1].split("&")[0] if "v=" in raw_url else raw_url.split("/")[-1]
-
-    output_template = f"temp_{video_id}.%(ext)s"
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': output_template,
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        'quiet': True,
-        'no_warnings': True,
-        'http_headers': IOS_HEADERS
-    }
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)
-            filename = ydl.prepare_filename(info)
-            mp3_filename = os.path.splitext(filename)[0] + ".mp3"
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(target_url, download=False)
+            stream_url = info.get('url')
             
-            if os.path.exists(mp3_filename):
-                title = info.get('title', 'DJ_ABHISHEK_DADA')
-                clean_title = "".join(c for c in title if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
-                
-                def generate():
-                    with open(mp3_filename, "rb") as f:
-                        yield from f
-                    try:
-                        os.remove(mp3_filename)
-                    except:
-                        pass
+            # Fallback if top-level url key is missing
+            if not stream_url and 'formats' in info:
+                audio_formats = [f for f in info['formats'] if f.get('vcodec') == 'none' and f.get('url')]
+                if audio_formats:
+                    stream_url = audio_formats[-1]['url']
+                else:
+                    stream_url = info['formats'][-1].get('url')
 
-                return Response(generate(), mimetype="audio/mpeg", headers={
-                    "Content-Disposition": f"attachment; filename={clean_title}.mp3"
-                })
-        return jsonify({"error": "Could not generate MP3"}), 500
+            if stream_url:
+                return {
+                    "status": "success",
+                    "stream_url": stream_url,
+                    "title": info.get('title', f"DJ_ABHISHEK_{vid}")
+                }
+            return JSONResponse(status_code=404, content={"status": "error", "message": "Direct audio URL not found"})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
-def main():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port, threaded=True)
+@app.get("/download-video")
+def get_video_stream(url: str = Query(...)):
+    """Extracts combined MP4 CDN stream URL for video download."""
+    vid = extract_video_id(url)
+    target_url = f"https://www.youtube.com/watch?v={vid}"
+
+    opts = dict(BASE_YTDL_OPTS)
+    opts['format'] = 'best[ext=mp4][vcodec!=none][acodec!=none]/best[ext=mp4]/best'
+
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(target_url, download=False)
+            stream_url = info.get('url')
+
+            if not stream_url and 'formats' in info:
+                progressive = [f for f in info['formats'] if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url')]
+                if progressive:
+                    stream_url = progressive[-1]['url']
+                else:
+                    stream_url = info['formats'][-1].get('url')
+
+            if stream_url:
+                return {
+                    "status": "success",
+                    "stream_url": stream_url,
+                    "title": info.get('title', f"DJ_ABHISHEK_{vid}")
+                }
+            return JSONResponse(status_code=404, content={"status": "error", "message": "Direct video URL not found"})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 if __name__ == "__main__":
-    main()
-    
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main.py:app", host="0.0.0.0", port=port, reload=False)
+                        
