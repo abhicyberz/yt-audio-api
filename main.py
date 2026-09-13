@@ -9,17 +9,8 @@ import yt_dlp
 app = Flask(__name__)
 CORS(app)
 
-def find_cookies_file():
-    candidates = [
-        Path("cookies.txt"),
-        Path(__file__).resolve().parent / "cookies.txt",
-        Path("/app/cookies.txt"),
-        Path.cwd() / "cookies.txt"
-    ]
-    for p in candidates:
-        if p.is_file() and p.stat().st_size > 50:
-            return str(p)
-    return None
+BASE_DIR = Path(__file__).resolve().parent
+COOKIE_FILE = BASE_DIR / "cookies.txt"
 
 def extract_video_id(url_or_id: str) -> str:
     patterns = [
@@ -33,12 +24,11 @@ def extract_video_id(url_or_id: str) -> str:
             return match.group(1)
     return url_or_id
 
-def get_ytdl_base_opts():
+def get_opts():
     opts = {
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
-        'socket_timeout': 30,
         'extractor_args': {
             'youtube': {
                 'player_client': ['web', 'android'],
@@ -50,53 +40,51 @@ def get_ytdl_base_opts():
             'Accept-Language': 'en-US,en;q=0.9',
         }
     }
-    cookie_file = find_cookies_file()
-    if cookie_file:
-        opts['cookiefile'] = cookie_file
+    if COOKIE_FILE.is_file():
+        opts['cookiefile'] = str(COOKIE_FILE)
     return opts
 
 @app.route("/", methods=["GET"])
-def health_check():
-    cookie_file = find_cookies_file()
-    return jsonify({
-        "status": "online",
-        "portal": "DJ ABHISHEK DADA",
-        "cookie_loaded": bool(cookie_file),
-        "cookie_path": cookie_file
-    })
+def health():
+    return jsonify({"status": "online", "mode": "DJ API", "cookies": COOKIE_FILE.is_file()})
 
+# 1. Latest Uploads Sabse Upar
 @app.route("/channel-tracks", methods=["GET"])
-def get_channel_tracks():
-    opts = get_ytdl_base_opts()
+def channel_tracks():
+    channel_url = "https://www.youtube.com/@dj_abhishek_dada/videos"
+    opts = get_opts()
     opts['extract_flat'] = 'in_playlist'
-    opts['playlistend'] = 500
+    opts['playlistend'] = 100
+
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            res = ydl.extract_info("https://www.youtube.com/@dj_abhishek_dada/videos", download=False)
+            res = ydl.extract_info(channel_url, download=False)
             entries = res.get('entries', []) or []
-            tracks = [
-                {
-                    "id": item.get("id"),
-                    "title": item.get("title", "DJ Track"),
-                    "author": "DJ ABHISHEK DADA"
-                }
-                for item in entries if item and item.get("id")
-            ]
+            
+            tracks = []
+            for item in entries:
+                if item and item.get("id"):
+                    tracks.append({
+                        "id": item.get("id"),
+                        "title": item.get("title", "DJ Track"),
+                        "author": item.get("uploader") or "DJ ABHISHEK DADA"
+                    })
             return jsonify({"status": "success", "tracks": tracks})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# 2. Search Engine
 @app.route("/search", methods=["GET"])
-def search_youtube():
-    query = request.args.get("q", "").strip()
-    if not query:
-        return jsonify({"status": "error", "message": "Missing search query"}), 400
+def search_tracks():
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"status": "error", "message": "Query required"}), 400
 
-    opts = get_ytdl_base_opts()
+    opts = get_opts()
     opts['extract_flat'] = 'in_playlist'
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            res = ydl.extract_info(f"ytsearch50:{query}", download=False)
+            res = ydl.extract_info(f"ytsearch50:{q}", download=False)
             entries = res.get('entries', []) or []
             tracks = [
                 {
@@ -110,87 +98,32 @@ def search_youtube():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route("/download-audio", methods=["GET"])
-def handle_audio_download():
-    raw_url = request.args.get("url", "").strip()
-    if not raw_url:
-        return jsonify({"status": "error", "message": "Missing url parameter"}), 400
-
-    vid = extract_video_id(raw_url)
-    target_url = f"https://www.youtube.com/watch?v={vid}"
-
-    opts = get_ytdl_base_opts()
-    # Format fallback: bestaudio -> m4a/mp3 -> any audio
-    opts['format'] = 'bestaudio/bestaudio*/best'
-
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(target_url, download=False)
-            stream_url = info.get('url')
-
-            if not stream_url and 'formats' in info:
-                for f in reversed(info['formats']):
-                    if f.get('url') and (f.get('vcodec') == 'none' or 'audio' in f.get('format', '')):
-                        stream_url = f['url']
-                        break
-                if not stream_url:
-                    stream_url = info['formats'][-1].get('url')
-
-            if not stream_url:
-                return jsonify({"status": "error", "message": "Audio stream link not found"}), 404
-
-            raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
-            clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
-
-            req = requests.get(stream_url, stream=True, timeout=30)
-            return Response(
-                stream_with_context(req.iter_content(chunk_size=1024 * 64)),
-                content_type="audio/mpeg",
-                headers={
-                    "Content-Disposition": f'attachment; filename="{clean_title}.mp3"',
-                    "Access-Control-Expose-Headers": "Content-Disposition"
-                }
-            )
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
+# 3. Separate MP4 Video Downloader
 @app.route("/download-video", methods=["GET"])
-def handle_video_download():
+def download_video():
     raw_url = request.args.get("url", "").strip()
     if not raw_url:
-        return jsonify({"status": "error", "message": "Missing url parameter"}), 400
+        return jsonify({"status": "error", "message": "Missing url"}), 400
 
     vid = extract_video_id(raw_url)
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
-    opts = get_ytdl_base_opts()
-    # Format fallback: Progressive MP4 pehle dhundhega, fir koi bhi available combined progressive stream
-    opts['format'] = 'best[ext=mp4][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]/best'
+    opts = get_opts()
+    opts['format'] = '18/22/best[ext=mp4]/best'
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(target_url, download=False)
             stream_url = info.get('url')
 
-            # Fallback manual format filter agar ydl ne direct URL na diya ho
             if not stream_url and 'formats' in info:
-                # 1. Progressive mp4 (Audio + Video dono sath me)
                 for f in reversed(info['formats']):
-                    if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('ext') == 'mp4':
+                    if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
                         stream_url = f['url']
                         break
-                # 2. Koi bhi progressive video
-                if not stream_url:
-                    for f in reversed(info['formats']):
-                        if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
-                            stream_url = f['url']
-                            break
-                # 3. Last fallback
-                if not stream_url:
-                    stream_url = info['formats'][-1].get('url')
 
             if not stream_url:
-                return jsonify({"status": "error", "message": "Video stream link not found"}), 404
+                return jsonify({"status": "error", "message": "Progressive stream link not found"}), 404
 
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
@@ -213,4 +146,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-            
+    
