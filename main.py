@@ -84,7 +84,6 @@ def search_tracks():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# Direct MP3 Audio File Streamer
 @app.route("/download-audio", methods=["GET"])
 def download_audio():
     raw_url = request.args.get("url", "").strip()
@@ -95,21 +94,20 @@ def download_audio():
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(target_url, download=False)
-            formats = info.get('formats', [])
+            formats = info.get('formats', []) or []
             stream_url = None
 
-            # 1. Direct audio stream dhundho
+            # Audio-only stream filter (m4a/webm/mp3)
             for f in reversed(formats):
                 if f.get('url') and f.get('vcodec') == 'none' and f.get('acodec') != 'none':
                     stream_url = f['url']
                     break
 
-            # 2. Fallback to any available working stream
             if not stream_url:
-                for f in reversed(formats):
-                    if f.get('url'):
-                        stream_url = f['url']
-                        break
+                stream_url = info.get('url')
+
+            if not stream_url and formats:
+                stream_url = formats[-1].get('url')
 
             if not stream_url:
                 return jsonify({"status": "error", "message": "Audio stream unavailable"}), 404
@@ -126,7 +124,6 @@ def download_audio():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# Direct MP4 Video File Streamer
 @app.route("/download-video", methods=["GET"])
 def download_video():
     raw_url = request.args.get("url", "").strip()
@@ -137,25 +134,20 @@ def download_video():
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(target_url, download=False)
-            formats = info.get('formats', [])
+            formats = info.get('formats', []) or []
             stream_url = None
 
-            # 1. Combined progressive MP4 (Video + Audio)
+            # Progressive MP4 (Audio + Video)
             for f in reversed(formats):
-                if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('ext') == 'mp4':
+                if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
                     stream_url = f['url']
                     break
 
-            # 2. Any combined progressive video
             if not stream_url:
-                for f in reversed(formats):
-                    if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
-                        stream_url = f['url']
-                        break
-
-            # 3. Best available direct stream URL
-            if not stream_url and info.get('url'):
                 stream_url = info.get('url')
+
+            if not stream_url and formats:
+                stream_url = formats[-1].get('url')
 
             if not stream_url:
                 return jsonify({"status": "error", "message": "Video stream unavailable"}), 404
@@ -178,4 +170,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-            
+    
