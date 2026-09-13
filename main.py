@@ -53,7 +53,7 @@ def health():
         "cookies_loaded": COOKIE_FILE.is_file()
     })
 
-# Default Channel Tracks (Latest Mixes of DJ ABHISHEK DADA)
+# Super-fast channel loader (Under 1 second)
 @app.route("/channel-tracks", methods=["GET"])
 def channel_tracks():
     opts = {
@@ -61,21 +61,20 @@ def channel_tracks():
         'no_warnings': True,
         'extract_flat': True,
         'skip_download': True,
+        'playlistend': 25
     }
     if COOKIE_FILE.is_file():
         opts['cookiefile'] = str(COOKIE_FILE)
 
     try:
-        # sp=CAI ensures newest uploaded videos come first
-        target = "https://www.youtube.com/results?search_query=DJ+ABHISHEK+DADA&sp=CAI"
         with yt_dlp.YoutubeDL(opts) as ydl:
-            res = ydl.extract_info(target, download=False)
+            res = ydl.extract_info("ytsearch25:DJ ABHISHEK DADA", download=False)
             entries = res.get('entries', []) or []
             tracks = [
                 {
                     "id": item.get("id"),
                     "title": item.get("title", "DJ Track"),
-                    "author": item.get("uploader") or item.get("channel") or "DJ ABHISHEK DADA"
+                    "author": item.get("uploader") or "DJ ABHISHEK DADA"
                 }
                 for item in entries if item and item.get("id")
             ]
@@ -83,7 +82,7 @@ def channel_tracks():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# Universal Search Endpoint (Links + Channel Name + Keyword Search)
+# Universal Search Endpoint
 @app.route("/search", methods=["GET"])
 def search_tracks():
     q = request.args.get("q", "").strip()
@@ -95,57 +94,31 @@ def search_tracks():
         'no_warnings': True,
         'extract_flat': True,
         'skip_download': True,
+        'playlistend': 30
     }
     if COOKIE_FILE.is_file():
         opts['cookiefile'] = str(COOKIE_FILE)
 
     try:
         is_url = q.startswith("http://") or q.startswith("https://") or "youtube.com" in q or "youtu.be" in q
-
-        if is_url:
-            # Agar direct channel URL hai toh /videos tab ensure karein
-            target_url = q
-            if ("/channel/" in q or "/c/" in q or "/user/" in q or "/@" in q) and not q.endswith("/videos"):
-                target_url = q.rstrip("/") + "/videos"
-            target = target_url
-        else:
-            # Name Search: sp=CAI parameter enforces latest uploaded tracks on top
-            encoded_query = requests.utils.quote(q)
-            target = f"https://www.youtube.com/results?search_query={encoded_query}&sp=CAI"
+        target = q if is_url else f"ytsearch30:{q}"
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             res = ydl.extract_info(target, download=False)
-            
             raw_entries = res.get('entries', []) if 'entries' in res else [res]
-            raw_entries = [item for item in raw_entries if item and item.get("id")]
-
-            # Sorting: Newest uploads explicitly placed on top
-            try:
-                raw_entries.sort(
-                    key=lambda x: str(x.get('upload_date') or x.get('timestamp') or ''), 
-                    reverse=True
-                )
-            except Exception:
-                pass
-
             tracks = [
                 {
                     "id": item.get("id"),
-                    "title": item.get("title", "Unknown Track"),
-                    "author": item.get("uploader") or item.get("channel") or item.get("creator") or q
+                    "title": item.get("title", "YouTube Track"),
+                    "author": item.get("uploader") or item.get("channel") or q
                 }
-                for item in raw_entries
+                for item in raw_entries if item and item.get("id")
             ]
-
-            if not tracks:
-                return jsonify({"status": "error", "message": "No tracks found"}), 404
-
             return jsonify({"status": "success", "tracks": tracks})
-
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# High Performance Audio Stream & Download Pipe
+# High-Performance Audio Stream & Direct MP3 Downloader
 @app.route("/download-audio", methods=["GET"])
 def download_audio():
     raw_url = request.args.get("url", "").strip()
@@ -160,7 +133,6 @@ def download_audio():
             stream_url = None
             selected_headers = info.get('http_headers', {})
 
-            # Filter best progressive audio-only stream
             for f in reversed(formats):
                 if f.get('url') and f.get('vcodec') == 'none' and f.get('acodec') != 'none':
                     stream_url = f['url']
@@ -196,7 +168,7 @@ def download_audio():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# High Performance Progressive MP4 Video Stream & Download Pipe
+# High-Performance MP4 Video Downloader
 @app.route("/download-video", methods=["GET"])
 def download_video():
     raw_url = request.args.get("url", "").strip()
@@ -211,7 +183,6 @@ def download_video():
             stream_url = None
             selected_headers = info.get('http_headers', {})
 
-            # Filter single progressive stream with combined Audio + Video
             for f in reversed(formats):
                 if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
                     stream_url = f['url']
@@ -253,3 +224,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+        
