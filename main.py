@@ -20,16 +20,20 @@ def extract_video_id(url_or_id: str) -> str:
             return match.group(1)
     return url_or_id
 
-# Safe universal client fallback
-BASE_YTDL_OPTS = {
+# Bypasses YouTube Datacenter Bot Protection using official Embedded Android token
+BYPASS_YTDL_OPTS = {
     'quiet': True,
     'no_warnings': True,
     'skip_download': True,
     'extractor_args': {
         'youtube': {
-            'player_client': ['android', 'web'],
+            'player_client': ['android_creator', 'android'],
             'player_skip': ['webpage', 'configs']
         }
+    },
+    'http_headers': {
+        'User-Agent': 'com.google.android.apps.youtube.creator/23.34.100 (Linux; U; Android 13) gzip',
+        'Accept-Language': 'en-US,en;q=0.9',
     }
 }
 
@@ -99,18 +103,8 @@ def handle_audio_download():
     vid = extract_video_id(raw_url)
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
-    # Multiple fallback formats to prevent 'Requested format is not available'
-    opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'skip_download': True,
-        'format': 'bestaudio/best',
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'web_embedded']
-            }
-        }
-    }
+    opts = dict(BYPASS_YTDL_OPTS)
+    opts['format'] = 'bestaudio/best'
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -118,7 +112,6 @@ def handle_audio_download():
             stream_url = info.get('url')
 
             if not stream_url and 'formats' in info:
-                # Find direct audio streams
                 for f in reversed(info['formats']):
                     if f.get('url') and (f.get('vcodec') == 'none' or 'audio' in f.get('format', '')):
                         stream_url = f['url']
@@ -127,12 +120,13 @@ def handle_audio_download():
                     stream_url = info['formats'][-1].get('url')
 
             if not stream_url:
-                return jsonify({"status": "error", "message": "Audio stream link not found"}), 404
+                return jsonify({"status": "error", "message": "Stream URL not available"}), 404
 
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
 
-            req = requests.get(stream_url, stream=True, timeout=20)
+            # Direct stream pipe: No ad page, direct file download in phone
+            req = requests.get(stream_url, stream=True, timeout=25)
             return Response(
                 stream_with_context(req.iter_content(chunk_size=1024 * 64)),
                 content_type="audio/mpeg",
@@ -153,17 +147,8 @@ def handle_video_download():
     vid = extract_video_id(raw_url)
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
-    opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'skip_download': True,
-        'format': 'best[ext=mp4]/best',
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'web_embedded']
-            }
-        }
-    }
+    opts = dict(BYPASS_YTDL_OPTS)
+    opts['format'] = 'best[ext=mp4]/best'
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -184,7 +169,7 @@ def handle_video_download():
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
 
-            req = requests.get(stream_url, stream=True, timeout=20)
+            req = requests.get(stream_url, stream=True, timeout=25)
             return Response(
                 stream_with_context(req.iter_content(chunk_size=1024 * 128)),
                 content_type="video/mp4",
@@ -202,4 +187,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+                        
