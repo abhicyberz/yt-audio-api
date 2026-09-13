@@ -103,19 +103,17 @@ def _pipe_youtube_audio(is_attachment: bool = True):
 
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
+    # CRITICAL: NO 'format' key here. yt-dlp will fetch all raw stream objects without checking format strings.
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
         'noplaylist': True,
-        'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/ba/b',
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios', 'mweb'],
-                'player_skip': ['configs', 'webpage'],
+                'player_client': ['ios', 'android', 'mweb']
             }
-        },
-        'http_chunk_size': 10485760
+        }
     }
     if COOKIE_FILE.is_file():
         ydl_opts['cookiefile'] = str(COOKIE_FILE)
@@ -123,21 +121,34 @@ def _pipe_youtube_audio(is_attachment: bool = True):
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(target_url, download=False)
-            stream_url = info.get('url')
+            formats = info.get('formats') or []
+            
+            stream_url = None
             headers = info.get('http_headers') or {}
-            ext = info.get('ext') or 'm4a'
 
-            if not stream_url and 'formats' in info:
-                audio_formats = [f for f in info['formats'] if f.get('url') and f.get('acodec') != 'none']
-                if audio_formats:
-                    best_f = sorted(audio_formats, key=lambda x: x.get('tbr') or x.get('abr') or 0, reverse=True)[0]
-                    stream_url = best_f.get('url')
-                    ext = best_f.get('ext') or ext
-                    if best_f.get('http_headers'):
-                        headers = best_f['http_headers']
+            # Priority 1: Audio only stream
+            for f in reversed(formats):
+                if f.get('url') and f.get('acodec') != 'none' and f.get('vcodec') == 'none':
+                    stream_url = f['url']
+                    if f.get('http_headers'):
+                        headers = f['http_headers']
+                    break
+
+            # Priority 2: Any stream containing audio (progressive muxed)
+            if not stream_url:
+                for f in reversed(formats):
+                    if f.get('url') and f.get('acodec') != 'none':
+                        stream_url = f['url']
+                        if f.get('http_headers'):
+                            headers = f['http_headers']
+                        break
+
+            # Priority 3: Fallback direct URL
+            if not stream_url:
+                stream_url = info.get('url')
 
             if not stream_url:
-                return jsonify({"status": "error", "message": "Audio stream could not be extracted"}), 404
+                return jsonify({"status": "error", "message": "No audio stream available"}), 404
 
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
@@ -149,12 +160,11 @@ def _pipe_youtube_audio(is_attachment: bool = True):
             req = requests.get(stream_url, headers=req_headers, stream=True, timeout=30)
             
             disposition = "attachment" if is_attachment else "inline"
-            download_ext = "mp3" if ext in ["m4a", "mp3"] else ext
             
             resp_headers = {
                 "Accept-Ranges": "bytes",
                 "Content-Type": req.headers.get('Content-Type', 'audio/mp4'),
-                "Content-Disposition": f'{disposition}; filename="{clean_title}.{download_ext}"',
+                "Content-Disposition": f'{disposition}; filename="{clean_title}.mp3"',
                 "Cache-Control": "no-cache"
             }
             if 'Content-Length' in req.headers:
@@ -192,14 +202,11 @@ def download_video():
         'no_warnings': True,
         'skip_download': True,
         'noplaylist': True,
-        'format': 'best[ext=mp4][vcodec!=none][acodec!=none]/best[ext=mp4]/18/22/best',
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios', 'mweb'],
-                'player_skip': ['configs', 'webpage'],
+                'player_client': ['ios', 'android', 'mweb']
             }
-        },
-        'http_chunk_size': 10485760
+        }
     }
     if COOKIE_FILE.is_file():
         ydl_opts['cookiefile'] = str(COOKIE_FILE)
@@ -207,22 +214,24 @@ def download_video():
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(target_url, download=False)
-            stream_url = info.get('url')
+            formats = info.get('formats') or []
+            
+            stream_url = None
             headers = info.get('http_headers') or {}
 
-            if not stream_url and 'formats' in info:
-                progressive = [
-                    f for f in info['formats']
-                    if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none'
-                ]
-                if progressive:
-                    best_f = sorted(progressive, key=lambda x: x.get('height') or 0, reverse=True)[0]
-                    stream_url = best_f.get('url')
-                    if best_f.get('http_headers'):
-                        headers = best_f['http_headers']
+            # Progressive MP4: audio + video both present
+            for f in reversed(formats):
+                if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
+                    stream_url = f['url']
+                    if f.get('http_headers'):
+                        headers = f['http_headers']
+                    break
 
             if not stream_url:
-                return jsonify({"status": "error", "message": "Progressive MP4 stream could not be extracted"}), 404
+                stream_url = info.get('url')
+
+            if not stream_url:
+                return jsonify({"status": "error", "message": "No video stream available"}), 404
 
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
@@ -258,4 +267,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-            
+        
