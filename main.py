@@ -116,6 +116,7 @@ def search_tracks():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# Format crash completely removed: Extracts stream directly from all available formats
 @app.route("/download-audio", methods=["GET"])
 def download_audio():
     raw_url = request.args.get("url", "").strip()
@@ -123,20 +124,32 @@ def download_audio():
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
     opts = get_base_opts()
-    opts['format'] = 'ba/b'
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(target_url, download=False)
-            stream_url = info.get('url')
+            formats = info.get('formats') or []
+            stream_url = None
             selected_headers = info.get('http_headers', {})
 
-            if not stream_url and info.get('formats'):
-                for f in reversed(info['formats']):
-                    if f.get('acodec') != 'none' and f.get('url'):
+            # 1. Pure audio format khojo
+            for f in reversed(formats):
+                if f.get('url') and f.get('vcodec') == 'none' and f.get('acodec') != 'none':
+                    stream_url = f['url']
+                    selected_headers = f.get('http_headers', selected_headers)
+                    break
+
+            # 2. Agar pure audio na mile toh kisi bhi audio-containing format ko uthao
+            if not stream_url:
+                for f in reversed(formats):
+                    if f.get('url') and f.get('acodec') != 'none':
                         stream_url = f['url']
                         selected_headers = f.get('http_headers', selected_headers)
                         break
+
+            # 3. Last fallback: default stream url
+            if not stream_url:
+                stream_url = info.get('url')
 
             if not stream_url:
                 return jsonify({"status": "error", "message": "Audio stream unavailable"}), 404
@@ -170,20 +183,23 @@ def download_video():
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
     opts = get_base_opts()
-    opts['format'] = 'best[ext=mp4]/best'
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(target_url, download=False)
-            stream_url = info.get('url')
+            formats = info.get('formats') or []
+            stream_url = None
             selected_headers = info.get('http_headers', {})
 
-            if not stream_url and info.get('formats'):
-                for f in reversed(info['formats']):
-                    if f.get('vcodec') != 'none' and f.get('url'):
-                        stream_url = f['url']
-                        selected_headers = f.get('http_headers', selected_headers)
-                        break
+            # Progressive video khojo (Audio + Video combined)
+            for f in reversed(formats):
+                if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
+                    stream_url = f['url']
+                    selected_headers = f.get('http_headers', selected_headers)
+                    break
+
+            if not stream_url:
+                stream_url = info.get('url')
 
             if not stream_url:
                 return jsonify({"status": "error", "message": "Video stream unavailable"}), 404
