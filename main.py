@@ -12,6 +12,9 @@ CORS(app)
 BASE_DIR = Path(__file__).resolve().parent
 COOKIE_FILE = BASE_DIR / "cookies.txt"
 
+# Modern Android User Agent (Google bot check bypass ke liye)
+ANDROID_USER_AGENT = "com.google.android.youtube/19.29.37 (Linux; U; Android 11; US) gzip"
+
 def extract_video_id(url_or_id: str) -> str:
     patterns = [
         r'(?:v=|\/)([0-9A-Za-z_-]{11})',
@@ -29,14 +32,14 @@ def get_base_opts():
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
+        # Android client direct extraction ke liye best hai (Bot bypass karta hai)
         'extractor_args': {
             'youtube': {
-                'player_client': ['web', 'android'],
-                'player_skip': ['configs']
+                'player_client': ['android', 'ios']
             }
         },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+            'User-Agent': ANDROID_USER_AGENT,
             'Accept-Language': 'en-US,en;q=0.9',
         }
     }
@@ -46,7 +49,11 @@ def get_base_opts():
 
 @app.route("/", methods=["GET"])
 def health():
-    return jsonify({"status": "online", "portal": "DJ ABHISHEK DADA", "cookies": COOKIE_FILE.is_file()})
+    return jsonify({
+        "status": "online", 
+        "portal": "DJ ABHISHEK DADA", 
+        "cookies_loaded": COOKIE_FILE.is_file()
+    })
 
 @app.route("/channel-tracks", methods=["GET"])
 def channel_tracks():
@@ -96,18 +103,18 @@ def download_audio():
             info = ydl.extract_info(target_url, download=False)
             formats = info.get('formats', []) or []
             stream_url = None
+            selected_headers = info.get('http_headers', {})
 
-            # Audio-only stream filter (m4a/webm/mp3)
+            # Best Audio-only stream
             for f in reversed(formats):
                 if f.get('url') and f.get('vcodec') == 'none' and f.get('acodec') != 'none':
                     stream_url = f['url']
+                    if f.get('http_headers'):
+                        selected_headers = f['http_headers']
                     break
 
             if not stream_url:
                 stream_url = info.get('url')
-
-            if not stream_url and formats:
-                stream_url = formats[-1].get('url')
 
             if not stream_url:
                 return jsonify({"status": "error", "message": "Audio stream unavailable"}), 404
@@ -115,10 +122,12 @@ def download_audio():
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
 
-            req = requests.get(stream_url, stream=True, timeout=30)
+            # YouTube CDN ke matching headers ke sath request bhejni zaroori hai
+            req = requests.get(stream_url, headers=selected_headers, stream=True, timeout=30)
+            
             return Response(
                 stream_with_context(req.iter_content(chunk_size=1024 * 64)),
-                content_type="audio/mpeg",
+                content_type=req.headers.get('Content-Type', 'audio/mpeg'),
                 headers={"Content-Disposition": f'attachment; filename="{clean_title}.mp3"'}
             )
     except Exception as e:
@@ -136,18 +145,18 @@ def download_video():
             info = ydl.extract_info(target_url, download=False)
             formats = info.get('formats', []) or []
             stream_url = None
+            selected_headers = info.get('http_headers', {})
 
-            # Progressive MP4 (Audio + Video)
+            # Progressive MP4 (Audio + Video dono sath me)
             for f in reversed(formats):
                 if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
                     stream_url = f['url']
+                    if f.get('http_headers'):
+                        selected_headers = f['http_headers']
                     break
 
             if not stream_url:
                 stream_url = info.get('url')
-
-            if not stream_url and formats:
-                stream_url = formats[-1].get('url')
 
             if not stream_url:
                 return jsonify({"status": "error", "message": "Video stream unavailable"}), 404
@@ -155,10 +164,11 @@ def download_video():
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
 
-            req = requests.get(stream_url, stream=True, timeout=30)
+            req = requests.get(stream_url, headers=selected_headers, stream=True, timeout=30)
+            
             return Response(
                 stream_with_context(req.iter_content(chunk_size=1024 * 128)),
-                content_type="video/mp4",
+                content_type=req.headers.get('Content-Type', 'video/mp4'),
                 headers={"Content-Disposition": f'attachment; filename="{clean_title}.mp4"'}
             )
     except Exception as e:
@@ -170,4 +180,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+                    
