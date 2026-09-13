@@ -57,13 +57,13 @@ def health():
 def channel_tracks():
     opts = get_base_opts()
     opts['extract_flat'] = 'in_playlist'
-    opts['playlistend'] = 500
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            res = ydl.extract_info("https://www.youtube.com/@dj_abhishek_dada/videos", download=False)
+            # Fix: Direct handle URL crash se bachne ke liye stable search pipeline
+            res = ydl.extract_info("ytsearch50:DJ ABHISHEK DADA", download=False)
             entries = res.get('entries', []) or []
             tracks = [
-                {"id": item.get("id"), "title": item.get("title", "DJ Track"), "author": "DJ ABHISHEK DADA"}
+                {"id": item.get("id"), "title": item.get("title", "DJ Track"), "author": item.get("uploader", "DJ ABHISHEK DADA")}
                 for item in entries if item and item.get("id")
             ]
             return jsonify({"status": "success", "tracks": tracks})
@@ -193,4 +193,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
+    
