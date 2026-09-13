@@ -9,9 +9,20 @@ import yt_dlp
 app = Flask(__name__)
 CORS(app)
 
-# Resolve absolute path to cookies.txt
-BASE_DIR = Path(__file__).resolve().parent
-COOKIE_FILE = BASE_DIR / "cookies.txt"
+# Auto-detect cookies.txt from any possible container directory
+def find_cookies_file():
+    candidates = [
+        Path("cookies.txt"),
+        Path(__file__).resolve().parent / "cookies.txt",
+        Path("/app/cookies.txt"),
+        Path.cwd() / "cookies.txt"
+    ]
+    for p in candidates:
+        if p.is_file() and p.stat().st_size > 50:
+            return str(p)
+    return None
+
+COOKIE_PATH = find_cookies_file()
 
 def extract_video_id(url_or_id: str) -> str:
     patterns = [
@@ -25,37 +36,43 @@ def extract_video_id(url_or_id: str) -> str:
             return match.group(1)
     return url_or_id
 
-def get_base_opts():
+def get_ytdl_opts(format_str):
     opts = {
+        'format': format_str,
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
+        'socket_timeout': 30,
         'extractor_args': {
             'youtube': {
-                'player_client': ['web', 'android'],
+                'player_client': ['web_creator', 'android'],
                 'player_skip': ['configs']
             }
         },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
+            'Sec-Fetch-Mode': 'navigate'
         }
     }
-    if COOKIE_FILE.is_file():
-        opts['cookiefile'] = str(COOKIE_FILE)
+    cookie_file = find_cookies_file()
+    if cookie_file:
+        opts['cookiefile'] = cookie_file
     return opts
 
 @app.route("/", methods=["GET"])
 def health_check():
+    cookie_file = find_cookies_file()
     return jsonify({
         "status": "online",
         "portal": "DJ ABHISHEK DADA",
-        "cookies_found": COOKIE_FILE.is_file()
+        "cookie_loaded": bool(cookie_file),
+        "cookie_path": cookie_file
     })
 
 @app.route("/channel-tracks", methods=["GET"])
 def get_channel_tracks():
-    opts = get_base_opts()
+    opts = get_ytdl_opts('best')
     opts['extract_flat'] = 'in_playlist'
     opts['playlistend'] = 500
     try:
@@ -80,7 +97,7 @@ def search_youtube():
     if not query:
         return jsonify({"status": "error", "message": "Missing search query"}), 400
 
-    opts = get_base_opts()
+    opts = get_ytdl_opts('best')
     opts['extract_flat'] = 'in_playlist'
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -107,8 +124,7 @@ def handle_audio_download():
     vid = extract_video_id(raw_url)
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
-    opts = get_base_opts()
-    opts['format'] = 'bestaudio/best'
+    opts = get_ytdl_opts('bestaudio/best')
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -124,12 +140,12 @@ def handle_audio_download():
                     stream_url = info['formats'][-1].get('url')
 
             if not stream_url:
-                return jsonify({"status": "error", "message": "Stream URL not available"}), 404
+                return jsonify({"status": "error", "message": "Audio stream link not found"}), 404
 
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
 
-            # Stream pipe directly to browser download manager
+            # Stream pipe directly to client
             req = requests.get(stream_url, stream=True, timeout=30)
             return Response(
                 stream_with_context(req.iter_content(chunk_size=1024 * 64)),
@@ -151,8 +167,7 @@ def handle_video_download():
     vid = extract_video_id(raw_url)
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
-    opts = get_base_opts()
-    opts['format'] = 'best[ext=mp4]/best'
+    opts = get_ytdl_opts('best[ext=mp4]/best')
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -191,4 +206,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-            
+                    
