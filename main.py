@@ -20,20 +20,16 @@ def extract_video_id(url_or_id: str) -> str:
             return match.group(1)
     return url_or_id
 
-# Strict iOS Client Config to bypass YouTube bot checking
-IOS_YTDL_OPTS = {
+# Safe universal client fallback
+BASE_YTDL_OPTS = {
     'quiet': True,
     'no_warnings': True,
     'skip_download': True,
     'extractor_args': {
         'youtube': {
-            'player_client': ['ios'],
+            'player_client': ['android', 'web'],
             'player_skip': ['webpage', 'configs']
         }
-    },
-    'http_headers': {
-        'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X; en_US)',
-        'Accept-Language': 'en-US,en;q=0.9',
     }
 }
 
@@ -48,7 +44,7 @@ def get_channel_tracks():
         'skip_download': True,
         'quiet': True,
         'playlistend': 500,
-        'extractor_args': {'youtube': {'player_client': ['ios']}}
+        'extractor_args': {'youtube': {'player_client': ['android']}}
     }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -70,19 +66,19 @@ def get_channel_tracks():
 def search_youtube():
     query = request.args.get("q", "").strip()
     if not query:
-        return jsonify({"status": "error", "message": "Missing search query"}), 400
+        return jsonify({"status": "error", "message": "Missing query"}), 400
 
     opts = {
         'extract_flat': 'in_playlist',
         'skip_download': True,
         'quiet': True,
-        'extractor_args': {'youtube': {'player_client': ['ios']}}
+        'extractor_args': {'youtube': {'player_client': ['android']}}
     }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             res = ydl.extract_info(f"ytsearch50:{query}", download=False)
             entries = res.get('entries', []) or []
-            results = [
+            tracks = [
                 {
                     "id": item.get("id"),
                     "title": item.get("title", "YouTube Track"),
@@ -90,7 +86,7 @@ def search_youtube():
                 }
                 for item in entries if item and item.get("id")
             ]
-            return jsonify({"status": "success", "tracks": results})
+            return jsonify({"status": "success", "tracks": tracks})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -103,17 +99,32 @@ def handle_audio_download():
     vid = extract_video_id(raw_url)
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
-    opts = dict(IOS_YTDL_OPTS)
-    opts['format'] = 'ba/b'
+    # Multiple fallback formats to prevent 'Requested format is not available'
+    opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'format': 'bestaudio/best',
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web_embedded']
+            }
+        }
+    }
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(target_url, download=False)
             stream_url = info.get('url')
-            
+
             if not stream_url and 'formats' in info:
-                audios = [f for f in info['formats'] if f.get('vcodec') == 'none' and f.get('url')]
-                stream_url = audios[-1]['url'] if audios else info['formats'][-1].get('url')
+                # Find direct audio streams
+                for f in reversed(info['formats']):
+                    if f.get('url') and (f.get('vcodec') == 'none' or 'audio' in f.get('format', '')):
+                        stream_url = f['url']
+                        break
+                if not stream_url:
+                    stream_url = info['formats'][-1].get('url')
 
             if not stream_url:
                 return jsonify({"status": "error", "message": "Audio stream link not found"}), 404
@@ -121,8 +132,7 @@ def handle_audio_download():
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
 
-            # Stream pipe to client as direct download
-            req = requests.get(stream_url, stream=True)
+            req = requests.get(stream_url, stream=True, timeout=20)
             return Response(
                 stream_with_context(req.iter_content(chunk_size=1024 * 64)),
                 content_type="audio/mpeg",
@@ -143,8 +153,17 @@ def handle_video_download():
     vid = extract_video_id(raw_url)
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
-    opts = dict(IOS_YTDL_OPTS)
-    opts['format'] = 'best[ext=mp4]/best'
+    opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'format': 'best[ext=mp4]/best',
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web_embedded']
+            }
+        }
+    }
 
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -152,8 +171,12 @@ def handle_video_download():
             stream_url = info.get('url')
 
             if not stream_url and 'formats' in info:
-                prog = [f for f in info['formats'] if f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('url')]
-                stream_url = prog[-1]['url'] if prog else info['formats'][-1].get('url')
+                for f in reversed(info['formats']):
+                    if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
+                        stream_url = f['url']
+                        break
+                if not stream_url:
+                    stream_url = info['formats'][-1].get('url')
 
             if not stream_url:
                 return jsonify({"status": "error", "message": "Video stream link not found"}), 404
@@ -161,7 +184,7 @@ def handle_video_download():
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
 
-            req = requests.get(stream_url, stream=True)
+            req = requests.get(stream_url, stream=True, timeout=20)
             return Response(
                 stream_with_context(req.iter_content(chunk_size=1024 * 128)),
                 content_type="video/mp4",
