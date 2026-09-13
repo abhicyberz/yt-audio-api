@@ -84,32 +84,7 @@ def search_tracks():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# Direct Audio Stream URL Generator (for Background Playback)
-@app.route("/stream-audio", methods=["GET"])
-def stream_audio():
-    raw_url = request.args.get("url", "").strip()
-    vid = extract_video_id(raw_url)
-    target_url = f"https://www.youtube.com/watch?v={vid}"
-
-    opts = get_base_opts()
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(target_url, download=False)
-            stream_url = None
-            if 'formats' in info:
-                for f in reversed(info['formats']):
-                    if f.get('url') and f.get('vcodec') == 'none' and f.get('acodec') != 'none':
-                        stream_url = f['url']
-                        break
-            if not stream_url:
-                stream_url = info.get('url')
-            if stream_url:
-                return jsonify({"status": "success", "stream_url": stream_url})
-            return jsonify({"status": "error"}), 404
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-# Direct MP3 Download Route
+# Direct MP3 Audio File Streamer
 @app.route("/download-audio", methods=["GET"])
 def download_audio():
     raw_url = request.args.get("url", "").strip()
@@ -120,14 +95,24 @@ def download_audio():
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(target_url, download=False)
+            formats = info.get('formats', [])
             stream_url = None
-            if 'formats' in info:
-                for f in reversed(info['formats']):
-                    if f.get('url') and f.get('vcodec') == 'none':
+
+            # 1. Direct audio stream dhundho
+            for f in reversed(formats):
+                if f.get('url') and f.get('vcodec') == 'none' and f.get('acodec') != 'none':
+                    stream_url = f['url']
+                    break
+
+            # 2. Fallback to any available working stream
+            if not stream_url:
+                for f in reversed(formats):
+                    if f.get('url'):
                         stream_url = f['url']
                         break
+
             if not stream_url:
-                stream_url = info.get('url')
+                return jsonify({"status": "error", "message": "Audio stream unavailable"}), 404
 
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
@@ -141,7 +126,7 @@ def download_audio():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# Direct MP4 Video Route (Universal Progressive Match)
+# Direct MP4 Video File Streamer
 @app.route("/download-video", methods=["GET"])
 def download_video():
     raw_url = request.args.get("url", "").strip()
@@ -152,16 +137,28 @@ def download_video():
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(target_url, download=False)
+            formats = info.get('formats', [])
             stream_url = None
-            
-            # Universal Progressive MP4 Selector (Video + Audio combined)
-            if 'formats' in info:
-                for f in reversed(info['formats']):
+
+            # 1. Combined progressive MP4 (Video + Audio)
+            for f in reversed(formats):
+                if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none' and f.get('ext') == 'mp4':
+                    stream_url = f['url']
+                    break
+
+            # 2. Any combined progressive video
+            if not stream_url:
+                for f in reversed(formats):
                     if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
                         stream_url = f['url']
                         break
-            if not stream_url:
+
+            # 3. Best available direct stream URL
+            if not stream_url and info.get('url'):
                 stream_url = info.get('url')
+
+            if not stream_url:
+                return jsonify({"status": "error", "message": "Video stream unavailable"}), 404
 
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
