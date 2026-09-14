@@ -33,18 +33,32 @@ def health():
 
 @app.route("/channel-tracks", methods=["GET"])
 def channel_tracks():
-    opts = {'quiet': True, 'extract_flat': True, 'playlistend': 50}
+    # Primary Engine: Direct Channel Videos
+    opts = {'quiet': True, 'extract_flat': True, 'playlistend': 40}
     if COOKIE_FILE.is_file(): opts['cookiefile'] = str(COOKIE_FILE)
+    
     try:
-        # Target explicitly set to videos tab
         target = "https://www.youtube.com/@DJABHISHEKDADA/videos"
         with yt_dlp.YoutubeDL(opts) as ydl:
             res = ydl.extract_info(target, download=False)
             entries = res.get('entries', []) or []
             tracks = [{"id": i.get("id"), "title": i.get("title", "DJ Track"), "author": i.get("uploader", "DJ ABHISHEK DADA")} for i in entries if i and i.get("id")]
-            return jsonify({"status": "success", "tracks": tracks})
+            
+            if tracks:
+                return jsonify({"status": "success", "tracks": tracks})
+            raise Exception("Empty Channel Response")
+            
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        # Fallback Engine: Auto-Search Bypass if cookies fail or channel tab blocks
+        try:
+            fallback_opts = {'quiet': True, 'extract_flat': True, 'playlistend': 20}
+            with yt_dlp.YoutubeDL(fallback_opts) as ydl:
+                res = ydl.extract_info("ytsearch20:DJ ABHISHEK DADA", download=False)
+                raw_entries = res.get('entries', []) if 'entries' in res else [res]
+                tracks = [{"id": i.get("id"), "title": i.get("title", "Track"), "author": i.get("uploader", "DJ ABHISHEK DADA")} for i in raw_entries if i and i.get("id")]
+                return jsonify({"status": "success", "tracks": tracks})
+        except Exception as ex:
+            return jsonify({"status": "error", "message": "Both Engines Blocked: " + str(ex)}), 500
 
 @app.route("/search", methods=["GET"])
 def search_tracks():
@@ -80,7 +94,7 @@ def _extract_stream(target_url, format_type):
 
                 if selected_url: return selected_url, info.get('http_headers', {}), info.get('title', 'Media')
         except: continue
-    raise Exception("Extraction blocked. Add valid cookies.")
+    raise Exception("Extraction blocked. Refresh or update cookies.")
 
 def _pipe_smart_media(format_type: str, is_attachment: bool = True):
     vid = extract_video_id(request.args.get("url", "").strip())
@@ -118,4 +132,4 @@ def download_video(): return _pipe_smart_media('video', is_attachment=True)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)), threaded=True)
-                                                                                                                                          
+                               
