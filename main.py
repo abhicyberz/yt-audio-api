@@ -13,36 +13,28 @@ BASE_DIR = Path(__file__).resolve().parent
 COOKIE_FILE = BASE_DIR / "cookies.txt"
 
 def extract_video_id(url_or_id: str) -> str:
-    patterns = [r'(?:v=|\/)([0-9A-Za-z_-]{11})', r'(?:youtu\.be\/)([0-9A-Za-z_-]{11})', r'^([0-9A-Za-z_-]{11})$']
-    for p in patterns:
+    for p in [r'(?:v=|\/)([0-9A-Za-z_-]{11})', r'(?:youtu\.be\/)([0-9A-Za-z_-]{11})', r'^([0-9A-Za-z_-]{11})$']:
         match = re.search(p, url_or_id)
         if match: return match.group(1)
     return url_or_id
 
-def get_ydl_opts(client_type="ios"):
-    opts = {
-        'quiet': True, 'no_warnings': True, 'skip_download': True, 'noplaylist': True,
-        'extractor_args': {'youtube': {'player_client': [client_type]}}
-    }
+def get_opts(client="ios"):
+    opts = {'quiet': True, 'no_warnings': True, 'skip_download': True, 'noplaylist': True, 'extractor_args': {'youtube': {'player_client': [client]}}}
     if COOKIE_FILE.is_file(): opts['cookiefile'] = str(COOKIE_FILE)
     return opts
 
 @app.route("/", methods=["GET"])
-def health():
-    return jsonify({"status": "online", "portal": "DJ ABHISHEK DADA"})
+def health(): return jsonify({"status": "online", "portal": "DJ ABHISHEK DADA API"})
 
 @app.route("/channel-tracks", methods=["GET"])
 def channel_tracks():
-    # DIRECT CHANNEL FETCH INSTEAD OF SEARCH
+    # Direct channel ke videos nikalega, random search nahi
     opts = {'quiet': True, 'extract_flat': True, 'playlistend': 50}
     if COOKIE_FILE.is_file(): opts['cookiefile'] = str(COOKIE_FILE)
-
     try:
-        target = "https://www.youtube.com/@DJABHISHEKDADA/videos"
         with yt_dlp.YoutubeDL(opts) as ydl:
-            res = ydl.extract_info(target, download=False)
-            entries = res.get('entries', []) or []
-            tracks = [{"id": i.get("id"), "title": i.get("title", "DJ Track"), "author": i.get("uploader") or "DJ ABHISHEK DADA"} for i in entries if i and i.get("id")]
+            res = ydl.extract_info("https://www.youtube.com/@DJABHISHEKDADA/videos", download=False)
+            tracks = [{"id": i.get("id"), "title": i.get("title", "DJ Track"), "author": i.get("uploader")} for i in res.get('entries', []) if i and i.get("id")]
             return jsonify({"status": "success", "tracks": tracks})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -56,59 +48,47 @@ def search_tracks():
         target = q if q.startswith("http") else f"ytsearch30:{q}"
         with yt_dlp.YoutubeDL(opts) as ydl:
             res = ydl.extract_info(target, download=False)
-            raw_entries = res.get('entries', []) if 'entries' in res else [res]
-            tracks = [{"id": i.get("id"), "title": i.get("title"), "author": i.get("uploader")} for i in raw_entries if i and i.get("id")]
+            tracks = [{"id": i.get("id"), "title": i.get("title"), "author": i.get("uploader")} for i in res.get('entries', []) if i and i.get("id")]
             return jsonify({"status": "success", "tracks": tracks})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    except Exception as e: return jsonify({"status": "error", "message": str(e)}), 500
 
-def _extract_stream(target_url, format_type):
-    clients = ['ios', 'android', 'mweb'] if format_type == 'audio' else ['ios', 'android', 'web']
-    for client in clients:
+def _extract_stream(url, fmt):
+    for client in (['ios', 'android', 'mweb'] if fmt == 'audio' else ['ios', 'android']):
         try:
-            with yt_dlp.YoutubeDL(get_ydl_opts(client)) as ydl:
-                info = ydl.extract_info(target_url, download=False)
+            with yt_dlp.YoutubeDL(get_opts(client)) as ydl:
+                info = ydl.extract_info(url, download=False)
                 formats = info.get('formats', [])
-                selected_url = None
-                
-                if format_type == 'audio':
-                    audio_cands = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
-                    if audio_cands: selected_url = sorted(audio_cands, key=lambda x: x.get('abr') or 0, reverse=True)[0]['url']
+                if fmt == 'audio':
+                    cands = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
+                    if cands: return sorted(cands, key=lambda x: x.get('abr') or 0, reverse=True)[0]['url'], info.get('http_headers', {}), info.get('title')
                 else:
-                    video_cands = [f for f in formats if f.get('vcodec') != 'none' and f.get('acodec') != 'none']
-                    if video_cands: selected_url = sorted(video_cands, key=lambda x: x.get('height') or 0, reverse=True)[0]['url']
-                
-                if selected_url: return selected_url, info.get('http_headers', {}), info.get('title', 'Media')
+                    cands = [f for f in formats if f.get('vcodec') != 'none' and f.get('acodec') != 'none']
+                    if cands: return sorted(cands, key=lambda x: x.get('height') or 0, reverse=True)[0]['url'], info.get('http_headers', {}), info.get('title')
         except: continue
-    raise Exception("All clients blocked.")
+    raise Exception("Extraction blocked")
 
-def _pipe_smart_media(format_type, is_attachment=True):
+def _pipe_media(fmt, is_att=True):
     vid = extract_video_id(request.args.get("url", ""))
-    if not vid: return jsonify({"status": "error"}), 400
+    if not vid: return jsonify({"error": "No ID"}), 400
     try:
-        stream_url, headers, raw_title = _extract_stream(f"https://www.youtube.com/watch?v={vid}", format_type)
-        clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip()
-        req_headers = dict(headers)
-        if "Range" in request.headers: req_headers["Range"] = request.headers["Range"]
+        url, hdrs, title = _extract_stream(f"https://www.youtube.com/watch?v={vid}", fmt)
+        clean = re.sub(r'[\/*?:"<>|]', "", title).strip()
+        req_hdrs = dict(hdrs)
+        if "Range" in request.headers: req_hdrs["Range"] = request.headers["Range"]
         
-        req = requests.get(stream_url, headers=req_headers, stream=True, timeout=30)
-        ext = "mp3" if format_type == 'audio' else "mp4"
-        mime = 'audio/mpeg' if format_type == 'audio' else 'video/mp4'
-        disp = f'{"attachment" if is_attachment else "inline"}; filename="{clean_title}.{ext}"'
+        r = requests.get(url, headers=req_hdrs, stream=True, timeout=30)
+        ext, mime = ("mp3", "audio/mpeg") if fmt == 'audio' else ("mp4", "video/mp4")
+        resp_hdrs = {"Accept-Ranges": "bytes", "Content-Type": r.headers.get('Content-Type', mime), "Content-Disposition": f'{"attachment" if is_att else "inline"}; filename="{clean}.{ext}"'}
+        if 'Content-Length' in r.headers: resp_hdrs['Content-Length'] = r.headers['Content-Length']
         
-        resp_headers = {"Accept-Ranges": "bytes", "Content-Type": req.headers.get('Content-Type', mime), "Content-Disposition": disp}
-        if 'Content-Length' in req.headers: resp_headers['Content-Length'] = req.headers['Content-Length']
-        
-        return Response(stream_with_context(req.iter_content(chunk_size=1024*128)), status=req.status_code, headers=resp_headers)
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return Response(stream_with_context(r.iter_content(chunk_size=128*1024)), status=r.status_code, headers=resp_hdrs)
+    except Exception as e: return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/stream-audio", methods=["GET"])
-def stream_audio(): return _pipe_smart_media('audio', False)
+def stream_audio(): return _pipe_media('audio', False)
 @app.route("/download-audio", methods=["GET"])
-def download_audio(): return _pipe_smart_media('audio', True)
+def download_audio(): return _pipe_media('audio', True)
 @app.route("/download-video", methods=["GET"])
-def download_video(): return _pipe_smart_media('video', True)
+def download_video(): return _pipe_media('video', True)
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)), threaded=True)
+if __name__ == "__main__": app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)), threaded=True)
