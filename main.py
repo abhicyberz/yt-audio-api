@@ -28,13 +28,12 @@ def extract_video_id(url_or_id: str) -> str:
 def health():
     return jsonify({
         "status": "online", 
-        "portal": "DJ ABHISHEK DADA Smart API", 
+        "portal": "DJ ABHISHEK DADA API", 
         "cookies_loaded": COOKIE_FILE.is_file()
     })
 
 @app.route("/channel-tracks", methods=["GET"])
 def channel_tracks():
-    # 500 limit aur fastest extraction
     opts = {
         'quiet': True,
         'no_warnings': True,
@@ -46,7 +45,6 @@ def channel_tracks():
         opts['cookiefile'] = str(COOKIE_FILE)
 
     try:
-        # sp=CAI parameter enforces latest upload sorting
         target = "https://www.youtube.com/results?search_query=DJ+ABHISHEK+DADA&sp=CAI"
         with yt_dlp.YoutubeDL(opts) as ydl:
             res = ydl.extract_info(target, download=False)
@@ -110,9 +108,7 @@ def _pipe_smart_media(format_type: str, is_attachment: bool = True):
 
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
-    # Smart Routing: Agar audio hai toh web client hide karke Android Music client use karo
-    # Agar video hai toh normal mweb fallback use karo
-    client_list = ['android_music', 'ios'] if format_type == 'audio' else ['ios', 'mweb']
+    client_list = ['android_music', 'ios'] if format_type == 'audio' else ['ios', 'android']
     
     ydl_opts = {
         'quiet': True,
@@ -137,31 +133,25 @@ def _pipe_smart_media(format_type: str, is_attachment: bool = True):
             
             stream_url = None
             headers = info.get('http_headers') or {}
-            ext = 'mp4'
 
             if format_type == 'audio':
-                # Pure audio format extraction
                 for f in reversed(formats):
                     if f.get('url') and f.get('acodec') != 'none' and f.get('vcodec') == 'none':
                         stream_url = f['url']
-                        ext = f.get('ext', 'm4a')
                         if f.get('http_headers'): headers = f['http_headers']
                         break
             else:
-                # Progressive Video (Audio+Video) extraction
                 for f in reversed(formats):
                     if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
                         stream_url = f['url']
-                        ext = f.get('ext', 'mp4')
                         if f.get('http_headers'): headers = f['http_headers']
                         break
 
-            # Ultimate fallback if formats are blocked but raw URL exists
             if not stream_url:
                 stream_url = info.get('url')
 
             if not stream_url:
-                return jsonify({"status": "error", "message": f"{format_type} stream blocked by server"}), 404
+                return jsonify({"status": "error", "message": f"{format_type} format stream blocked"}), 404
 
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
