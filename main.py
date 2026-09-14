@@ -28,25 +28,28 @@ def extract_video_id(url_or_id: str) -> str:
 def health():
     return jsonify({
         "status": "online", 
-        "portal": "DJ ABHISHEK DADA", 
+        "portal": "DJ ABHISHEK DADA Smart API", 
         "cookies_loaded": COOKIE_FILE.is_file()
     })
 
 @app.route("/channel-tracks", methods=["GET"])
 def channel_tracks():
+    # 500 limit aur fastest extraction
     opts = {
         'quiet': True,
         'no_warnings': True,
         'extract_flat': True,
         'skip_download': True,
-        'playlistend': 25
+        'playlistend': 500
     }
     if COOKIE_FILE.is_file():
         opts['cookiefile'] = str(COOKIE_FILE)
 
     try:
+        # sp=CAI parameter enforces latest upload sorting
+        target = "https://www.youtube.com/results?search_query=DJ+ABHISHEK+DADA&sp=CAI"
         with yt_dlp.YoutubeDL(opts) as ydl:
-            res = ydl.extract_info("ytsearch25:DJ ABHISHEK DADA", download=False)
+            res = ydl.extract_info(target, download=False)
             entries = res.get('entries', []) or []
             tracks = [
                 {
@@ -71,14 +74,18 @@ def search_tracks():
         'no_warnings': True,
         'extract_flat': True,
         'skip_download': True,
-        'playlistend': 30
+        'playlistend': 500
     }
     if COOKIE_FILE.is_file():
         opts['cookiefile'] = str(COOKIE_FILE)
 
     try:
         is_url = q.startswith("http://") or q.startswith("https://") or "youtube.com" in q or "youtu.be" in q
-        target = q if is_url else f"ytsearch30:{q}"
+        if is_url:
+            target = q
+        else:
+            encoded_query = requests.utils.quote(q)
+            target = f"https://www.youtube.com/results?search_query={encoded_query}&sp=CAI"
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             res = ydl.extract_info(target, download=False)
@@ -95,7 +102,7 @@ def search_tracks():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-def _pipe_youtube_audio(is_attachment: bool = True):
+def _pipe_smart_media(format_type: str, is_attachment: bool = True):
     raw_url = request.args.get("url", "").strip()
     vid = extract_video_id(raw_url)
     if not vid:
@@ -103,7 +110,10 @@ def _pipe_youtube_audio(is_attachment: bool = True):
 
     target_url = f"https://www.youtube.com/watch?v={vid}"
 
-    # CRITICAL: NO 'format' key here. yt-dlp will fetch all raw stream objects without checking format strings.
+    # Smart Routing: Agar audio hai toh web client hide karke Android Music client use karo
+    # Agar video hai toh normal mweb fallback use karo
+    client_list = ['android_music', 'ios'] if format_type == 'audio' else ['ios', 'mweb']
+    
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
@@ -111,9 +121,11 @@ def _pipe_youtube_audio(is_attachment: bool = True):
         'noplaylist': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'android', 'mweb']
+                'player_client': client_list,
+                'player_skip': ['configs', 'webpage'],
             }
-        }
+        },
+        'http_chunk_size': 10485760
     }
     if COOKIE_FILE.is_file():
         ydl_opts['cookiefile'] = str(COOKIE_FILE)
@@ -125,30 +137,31 @@ def _pipe_youtube_audio(is_attachment: bool = True):
             
             stream_url = None
             headers = info.get('http_headers') or {}
+            ext = 'mp4'
 
-            # Priority 1: Audio only stream
-            for f in reversed(formats):
-                if f.get('url') and f.get('acodec') != 'none' and f.get('vcodec') == 'none':
-                    stream_url = f['url']
-                    if f.get('http_headers'):
-                        headers = f['http_headers']
-                    break
-
-            # Priority 2: Any stream containing audio (progressive muxed)
-            if not stream_url:
+            if format_type == 'audio':
+                # Pure audio format extraction
                 for f in reversed(formats):
-                    if f.get('url') and f.get('acodec') != 'none':
+                    if f.get('url') and f.get('acodec') != 'none' and f.get('vcodec') == 'none':
                         stream_url = f['url']
-                        if f.get('http_headers'):
-                            headers = f['http_headers']
+                        ext = f.get('ext', 'm4a')
+                        if f.get('http_headers'): headers = f['http_headers']
+                        break
+            else:
+                # Progressive Video (Audio+Video) extraction
+                for f in reversed(formats):
+                    if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
+                        stream_url = f['url']
+                        ext = f.get('ext', 'mp4')
+                        if f.get('http_headers'): headers = f['http_headers']
                         break
 
-            # Priority 3: Fallback direct URL
+            # Ultimate fallback if formats are blocked but raw URL exists
             if not stream_url:
                 stream_url = info.get('url')
 
             if not stream_url:
-                return jsonify({"status": "error", "message": "No audio stream available"}), 404
+                return jsonify({"status": "error", "message": f"{format_type} stream blocked by server"}), 404
 
             raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
             clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
@@ -160,92 +173,13 @@ def _pipe_youtube_audio(is_attachment: bool = True):
             req = requests.get(stream_url, headers=req_headers, stream=True, timeout=30)
             
             disposition = "attachment" if is_attachment else "inline"
+            download_ext = "mp3" if format_type == 'audio' else "mp4"
+            mime_type = 'audio/mpeg' if format_type == 'audio' else 'video/mp4'
             
             resp_headers = {
                 "Accept-Ranges": "bytes",
-                "Content-Type": req.headers.get('Content-Type', 'audio/mp4'),
-                "Content-Disposition": f'{disposition}; filename="{clean_title}.mp3"',
-                "Cache-Control": "no-cache"
-            }
-            if 'Content-Length' in req.headers:
-                resp_headers['Content-Length'] = req.headers['Content-Length']
-            if 'Content-Range' in req.headers:
-                resp_headers['Content-Range'] = req.headers['Content-Range']
-
-            return Response(
-                stream_with_context(req.iter_content(chunk_size=1024 * 64)),
-                status=req.status_code if req.status_code in [200, 206] else 200,
-                headers=resp_headers
-            )
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route("/stream-audio", methods=["GET"])
-def stream_audio():
-    return _pipe_youtube_audio(is_attachment=False)
-
-@app.route("/download-audio", methods=["GET"])
-def download_audio():
-    return _pipe_youtube_audio(is_attachment=True)
-
-@app.route("/download-video", methods=["GET"])
-def download_video():
-    raw_url = request.args.get("url", "").strip()
-    vid = extract_video_id(raw_url)
-    if not vid:
-        return jsonify({"status": "error", "message": "Video ID missing"}), 400
-
-    target_url = f"https://www.youtube.com/watch?v={vid}"
-
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'skip_download': True,
-        'noplaylist': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['ios', 'android', 'mweb']
-            }
-        }
-    }
-    if COOKIE_FILE.is_file():
-        ydl_opts['cookiefile'] = str(COOKIE_FILE)
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(target_url, download=False)
-            formats = info.get('formats') or []
-            
-            stream_url = None
-            headers = info.get('http_headers') or {}
-
-            # Progressive MP4: audio + video both present
-            for f in reversed(formats):
-                if f.get('url') and f.get('vcodec') != 'none' and f.get('acodec') != 'none':
-                    stream_url = f['url']
-                    if f.get('http_headers'):
-                        headers = f['http_headers']
-                    break
-
-            if not stream_url:
-                stream_url = info.get('url')
-
-            if not stream_url:
-                return jsonify({"status": "error", "message": "No video stream available"}), 404
-
-            raw_title = info.get('title', f"DJ_ABHISHEK_{vid}")
-            clean_title = re.sub(r'[\/*?:"<>|]', "", raw_title).strip() or f"DJ_ABHISHEK_{vid}"
-
-            req_headers = dict(headers or {})
-            if "Range" in request.headers:
-                req_headers["Range"] = request.headers["Range"]
-
-            req = requests.get(stream_url, headers=req_headers, stream=True, timeout=30)
-            
-            resp_headers = {
-                "Accept-Ranges": "bytes",
-                "Content-Type": "video/mp4",
-                "Content-Disposition": f'attachment; filename="{clean_title}.mp4"',
+                "Content-Type": req.headers.get('Content-Type', mime_type),
+                "Content-Disposition": f'{disposition}; filename="{clean_title}.{download_ext}"',
                 "Cache-Control": "no-cache"
             }
             if 'Content-Length' in req.headers:
@@ -260,6 +194,18 @@ def download_video():
             )
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/stream-audio", methods=["GET"])
+def stream_audio():
+    return _pipe_smart_media('audio', is_attachment=False)
+
+@app.route("/download-audio", methods=["GET"])
+def download_audio():
+    return _pipe_smart_media('audio', is_attachment=True)
+
+@app.route("/download-video", methods=["GET"])
+def download_video():
+    return _pipe_smart_media('video', is_attachment=True)
 
 def main():
     port = int(os.environ.get("PORT", 8080))
