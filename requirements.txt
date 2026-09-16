@@ -1,4 +1,5 @@
-flask
-flask-cors
-yt-dlp
-gunicorn
+Flask>=3.0.0
+flask-cors>=4.0.0
+requests>=2.31.0
+yt-dlp>=2025.02.19
+gunicorn>=22.0.0
